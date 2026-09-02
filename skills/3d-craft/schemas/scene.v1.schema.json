@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://3d-craft.local/schemas/scene.v1.schema.json",
+  "title": "3D-Craft scene contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "units", "up_axis", "origin_policy", "authoring_mode", "dimensions", "identity_features", "components", "materials", "cameras", "runtime", "budgets", "required_evidence"],
+  "properties": {
+    "schema": {"const": "3d-craft.scene.v1"},
+    "units": {"enum": ["meters"]},
+    "up_axis": {"const": "Z"},
+    "origin_policy": {"enum": ["object-base-center", "world-origin", "declared-custom"]},
+    "authoring_mode": {"enum": ["procedural", "native", "hybrid"]},
+    "dimensions": {"type": "object", "additionalProperties": false, "required": ["width", "depth", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "depth": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}, "tolerance_percent": {"type": "number", "minimum": 0}}},
+    "identity_features": {"type": "array", "items": {"type": "object", "required": ["id", "description", "importance", "status"], "properties": {"id": {"type": "string"}, "description": {"type": "string"}, "importance": {"enum": ["critical", "major", "minor"]}, "status": {"enum": ["specified", "observed", "inferred", "unverified"]}}}},
+    "components": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+    "materials": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+    "cameras": {"type": "array", "items": {"enum": ["front", "back", "left", "right", "top", "perspective"]}, "uniqueItems": true},
+    "runtime": {"type": "object", "required": ["engine", "renderer", "target_devices"], "properties": {"engine": {"enum": ["none", "three", "r3f"]}, "renderer": {"enum": ["none", "webgl"]}, "target_devices": {"type": "array", "items": {"enum": ["desktop", "mobile"]}, "uniqueItems": true}}},
+    "budgets": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["approved", "provisional"]}, "asset_bytes": {"type": ["integer", "null"], "minimum": 0}, "triangles": {"type": ["integer", "null"], "minimum": 0}, "draw_calls": {"type": ["integer", "null"], "minimum": 0}, "textures": {"type": ["integer", "null"], "minimum": 0}, "frame_p95_ms": {"type": ["number", "null"], "minimum": 0}}},
+    "required_evidence": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  }
+}

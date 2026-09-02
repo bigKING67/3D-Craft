@@ -1,0 +1,46 @@
+{
+  "schema": "3d-craft.upstreams.v1",
+  "reviewed_at": "2026-09-02",
+  "upstreams": [
+    {
+      "repo": "ifBars/blender-agent-studio",
+      "commit": "b1cefdd1bcc1b7bf40423259a5c6fa154e2259f4",
+      "license": "MIT",
+      "source_paths": ["README.md", "SKILL.md", "LICENSE"],
+      "absorbed_concepts": ["graybox-to-polish stages", "deterministic source authority", "fixed multiview evidence", "baseline versus skill versus tool separation"],
+      "copied_files": [],
+      "local_destinations": ["references/blender-production.md", "scripts/blend_inspect.py", "scripts/render_evidence.py"],
+      "validation_cases": ["evals/coffee-grinder"]
+    },
+    {
+      "repo": "RobLe3/cc-blender-skill",
+      "commit": "11016c9a5847897491dde935c346571bd7548e3d",
+      "license": "MIT",
+      "source_paths": ["README.md", "LICENSE"],
+      "absorbed_concepts": ["bounded repair loop", "reference identity gates reserved for V0.3"],
+      "copied_files": [],
+      "local_destinations": ["references/repair-and-security.md", "docs/ROADMAP.md"],
+      "validation_cases": ["tests/test_cli.py"]
+    },
+    {
+      "repo": "EnzeD/r3f-skills",
+      "commit": "4a11805f097396fb0b893172efd1e359e8051f92",
+      "license": "MIT (declared in README; no LICENSE file at reviewed commit)",
+      "source_paths": ["README.md", "skills/r3f-fundamentals/SKILL.md", "skills/r3f-loaders/SKILL.md"],
+      "absorbed_concepts": ["version-pinned examples", "typecheck plus Chromium rendering", "remount verification"],
+      "copied_files": [],
+      "local_destinations": ["assets/r3f-viewer", "references/web3d-runtime-qa.md"],
+      "validation_cases": ["npm run viewer:typecheck", "npm run viewer:build"]
+    },
+    {
+      "repo": "img2threejs/img2threejs",
+      "commit": "9fbd0ca5bbcc3b13bebe712745d6784d33db0b85",
+      "license": "Apache-2.0",
+      "source_paths": ["README.md", "SKILL.md", "LICENSE"],
+      "absorbed_concepts": ["run state machine", "identity-feature ledger", "hidden-region uncertainty", "fail-closed quality stages reserved for V0.3"],
+      "copied_files": [],
+      "local_destinations": ["schemas/run.v1.schema.json", "schemas/scene.v1.schema.json", "docs/ROADMAP.md"],
+      "validation_cases": ["evals/coffee-grinder/scene.json"]
+    }
+  ]
+}

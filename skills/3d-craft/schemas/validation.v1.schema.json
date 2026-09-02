@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://3d-craft.local/schemas/validation.v1.schema.json",
+  "title": "3D-Craft validation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "candidate_sha256", "status", "gates", "evidence", "issues", "repairs", "delivery"],
+  "properties": {
+    "schema": {"const": "3d-craft.validation.v1"},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "status": {"enum": ["PASS", "FAIL", "UNVERIFIED", "BLOCKED"]},
+    "gates": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "status", "evidence"], "properties": {"id": {"enum": ["authority", "reproduction", "scene_integrity", "identity", "gltf", "cross_runtime", "web_runtime", "delivery"]}, "status": {"enum": ["PASS", "FAIL", "UNVERIFIED", "BLOCKED"]}, "evidence": {"type": "array", "items": {"type": "string"}}, "note": {"type": "string"}}}},
+    "evidence": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "issues": {"type": "array", "items": {"type": "object", "required": ["severity", "message"], "properties": {"severity": {"enum": ["P0", "P1", "P2", "P3"]}, "message": {"type": "string"}, "gate": {"type": "string"}}}},
+    "repairs": {"type": "array", "maxItems": 3, "items": {"type": "object"}},
+    "delivery": {"type": "object", "required": ["files", "commands", "unverified"], "properties": {"files": {"type": "array", "items": {"type": "object"}}, "commands": {"type": "array", "items": {"type": "string"}}, "unverified": {"type": "array", "items": {"type": "string"}}}}
+  }
+}
