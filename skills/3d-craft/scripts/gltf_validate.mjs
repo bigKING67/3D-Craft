@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { access, readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import validator from 'gltf-validator';
+import * as validator from '../vendor/gltf-validator/module.mjs';
 
 function parseArgs(argv) {
-  const values = { input: null, output: null };
+  const values = { input: null, output: null, doctor: false };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
-    if (value === '--output') values.output = argv[++index];
+    if (value === '--doctor') values.doctor = true;
+    else if (value === '--output') values.output = argv[++index];
     else if (!values.input) values.input = value;
     else throw new Error(`unexpected argument: ${value}`);
+  }
+  if (values.doctor) {
+    if (values.input || values.output) throw new Error('--doctor cannot be combined with asset arguments');
+    return values;
   }
   if (!values.input || !values.output) throw new Error('usage: gltf_validate.mjs <asset.glb> --output <report.json>');
   return values;
@@ -24,6 +29,7 @@ function parseGlb(buffer) {
   const jsonLength = buffer.readUInt32LE(12);
   const jsonType = buffer.readUInt32LE(16);
   if (jsonType !== 0x4e4f534a) throw new Error('first GLB chunk is not JSON');
+  if (jsonLength % 4 !== 0 || 20 + jsonLength > buffer.length) throw new Error('invalid GLB JSON chunk length');
   return JSON.parse(buffer.subarray(20, 20 + jsonLength).toString('utf8').replace(/[\u0000\u0020]+$/g, ''));
 }
 
@@ -69,7 +75,10 @@ function semanticSummary(gltf, byteLength) {
   let primitives = 0;
   let triangles = 0;
   const meshNodes = [];
+  const visited = new Set();
   function visit(nodeIndex, parentMatrix) {
+    if (!Number.isInteger(nodeIndex) || nodeIndex < 0 || nodeIndex >= (gltf.nodes?.length ?? 0) || visited.has(nodeIndex)) return;
+    visited.add(nodeIndex);
     const node = gltf.nodes?.[nodeIndex] ?? {};
     const world = mat4Multiply(parentMatrix, nodeMatrix(node));
     if (Number.isInteger(node.mesh)) {
@@ -80,7 +89,9 @@ function semanticSummary(gltf, byteLength) {
         const count = Number.isInteger(primitive.indices)
           ? gltf.accessors?.[primitive.indices]?.count ?? 0
           : gltf.accessors?.[primitive.attributes?.POSITION]?.count ?? 0;
-        triangles += Math.floor(count / 3);
+        const mode = primitive.mode ?? 4;
+        if (mode === 4) triangles += Math.floor(count / 3);
+        else if (mode === 5 || mode === 6) triangles += Math.max(0, count - 2);
         const accessor = gltf.accessors?.[primitive.attributes?.POSITION];
         if (!accessor?.min || !accessor?.max) continue;
         for (const x of [accessor.min[0], accessor.max[0]]) {
@@ -129,11 +140,26 @@ function semanticSummary(gltf, byteLength) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.doctor) {
+    process.stdout.write(`${JSON.stringify({ schema: '3d-craft.gltf-validator-doctor.v1', status: 'PASS', version: validator.version() })}\n`);
+    return 0;
+  }
   const input = path.resolve(args.input);
   const output = path.resolve(args.output);
+  if (input === output) throw new Error('--output must not overwrite the input GLB');
+  try {
+    await access(output);
+    throw new Error('validation output already exists; create a new run for a new candidate');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
   const bytes = await readFile(input);
   const gltf = parseGlb(bytes);
-  const validation = await validator.validateBytes(new Uint8Array(bytes), { uri: path.basename(input), maxIssues: 1000 });
+  const validation = await validator.validateBytes(new Uint8Array(bytes), {
+    uri: path.basename(input),
+    maxIssues: 1000,
+    writeTimestamp: false,
+  });
   const report = {
     schema: '3d-craft.gltf-validation.v1',
     status: validation.issues.numErrors === 0 ? 'PASS' : 'FAIL',

@@ -16,6 +16,18 @@ Record source hashes, input hashes, tool versions, output paths, licenses, and
 manual steps. Reproduction compares normalized scene and GLB semantic facts,
 not volatile `.blend` bytes.
 
+After the candidate files and GLB validation report exist, use
+`scripts/3d_craft.py bind-asset` to derive `asset.json` and the scene input hash
+from observed bytes. Pass the actual asset license explicitly; the command does
+not infer ownership or licensing.
+
+For rendered routes, use `init-visual-review` only after the fixed-view report
+exists. The generated template begins as `UNVERIFIED` and binds the current
+`.blend` plus `render-evidence.json`; it is not a pass receipt. Inspect the
+images and complete reviewer identity, review time, overall note, and a
+view-backed note for every critical or major identity feature. Any later render
+change invalidates the assessment binding.
+
 ## Evidence language
 
 Use `SPECIFIED`, `OBSERVED`, `INFERRED`, `HYPOTHESIZED`, and `UNVERIFIED`.
@@ -33,6 +45,10 @@ than overwriting the prior receipt.
 Run data defaults outside the repository. Generated assets may enter a delivery
 directory only when the user chose it. Do not place screenshots, render frames,
 or Blender backup files beside source code.
+
+Evidence producers and `bind-asset` refuse to overwrite their owned outputs.
+Create a new run whenever candidate bytes, the scene contract, or an assessment
+changes; do not add a force flag that erases prior provenance.
 
 ## Status semantics
 

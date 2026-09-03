@@ -24,6 +24,14 @@ product or prop brief
 Reference reconstruction, characters, simulation, games, WebGPU, and MCP
 bundling are deferred. See `docs/PRODUCT.md` and `docs/ROADMAP.md`.
 
+## Upstream learning
+
+[`UPSTREAM.md`](UPSTREAM.md) is the maintainer guide for learning selectively
+from Blender, glTF, Three.js, R3F, motion, MCP, and game-oriented upstreams.
+Reviewed revisions live in `upstreams.lock.json`; future research leads remain
+an explicit watchlist until a fixed-commit, path-scoped, license-aware audit is
+accepted. Upstream movement never triggers automatic installation or merging.
+
 ## Source validation
 
 ```bash
@@ -80,13 +88,43 @@ python3 skills/3d-craft/scripts/3d_craft.py init-run \
   --project-key coffee-grinder --run-dir "$run_dir" --authoring-mode procedural --json
 cp evals/coffee-grinder/scene.json "$run_dir/scene.json"
 blender --background --factory-startup \
+  --python-exit-code 2 \
   --python evals/coffee-grinder/create_asset.py -- \
   --output-dir "$run_dir/assets"
+blender --background "$run_dir/assets/asset.blend" \
+  --python-exit-code 2 \
+  --python skills/3d-craft/scripts/blend_inspect.py -- \
+  --scene-contract "$run_dir/scene.json" \
+  --output "$run_dir/evidence/blend-inspection.json"
+blender --background "$run_dir/assets/asset.blend" \
+  --python-exit-code 2 \
+  --python skills/3d-craft/scripts/render_evidence.py -- \
+  --scene-contract "$run_dir/scene.json" \
+  --output-dir "$run_dir/evidence"
+node skills/3d-craft/scripts/gltf_validate.mjs \
+  "$run_dir/assets/asset.glb" \
+  --output "$run_dir/evidence/gltf-validation.json"
+python3 skills/3d-craft/scripts/3d_craft.py bind-asset \
+  --run-dir "$run_dir" \
+  --source "$PWD/evals/coffee-grinder/create_asset.py" \
+  --license MIT \
+  --license-subject "coffee-grinder fixture" \
+  --license-source "original 3D-Craft procedural fixture" \
+  --json
+python3 skills/3d-craft/scripts/3d_craft.py init-visual-review \
+  --run-dir "$run_dir" \
+  --reviewer-kind agent \
+  --reviewer-name "<agent identity>" \
+  --json
 ```
 
-Continue with the inspection, render, GLB, viewer, and browser commands in
+Inspect the fixed views and complete `evidence/visual-review.json`; its template
+is deliberately `UNVERIFIED`. Create a second clean build and use
+`compare_reproduction.py` before assured validation; then continue with the
+viewer and browser67 steps in
 `skills/3d-craft/SKILL.md`. Do not commit generated `.blend`, `.glb`, renders,
-screenshots, or run state.
+screenshots, or run state. `bind-asset` derives hashes from observed files; it
+does not infer or grant an asset license.
 
 ## Product boundary
 

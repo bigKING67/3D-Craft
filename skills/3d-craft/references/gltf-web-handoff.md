@@ -21,18 +21,22 @@ Khronos validation is necessary but not sufficient. Also inspect:
 - unused resources and GLB byte size.
 
 The V0.1 validator parses the GLB JSON chunk and reports a semantic digest.
-Bind the report to the GLB SHA-256.
+Bind the report to the GLB SHA-256. Its audited Khronos validation runtime is
+bundled under `vendor/gltf-validator/`, so an isolated Skill package does not
+depend on repository-level `node_modules` or network installation.
 
 ## Web integration
 
 Configure Draco, KTX2, or Meshopt decoders only when the asset actually uses
 them. Treat exporter compression and loader support as one contract. Own
 loading, error, camera framing, resize, tone mapping, color space, shadows,
-interaction, resource disposal, and context-loss behavior. Revalidate after
-every optimization and compare visual evidence before accepting size gains.
+interaction, and resource disposal. Record context-loss recovery as
+`UNVERIFIED` in V0.1; automated recovery belongs to V0.2. Revalidate after every
+optimization and compare visual evidence before accepting size gains.
 
-Keep runtime dependencies and generated assets out of the installed Skill.
-Copy the viewer template into a run-owned directory, then use its nested lock:
+Keep viewer npm dependencies and generated assets out of the installed Skill;
+the audited validator runtime above is the only V0.1 exception. Copy the viewer
+template into a run-owned directory, then use its nested lock:
 
 ```bash
 viewer_run_dir="$(mktemp -d /tmp/3d-craft-viewer.XXXXXX)"
@@ -42,6 +46,18 @@ cd "$viewer_run_dir"
 npm ci
 VITE_ASSET_SHA256=<asset-sha256> npm run dev
 ```
+
+Set `VITE_ASSET_URL` and `VITE_ASSET_SHA256` for the candidate. Set
+`VITE_ASSET_NAME` and `VITE_ASSET_DESCRIPTION` when presenting a named product;
+the template defaults remain asset-neutral and must not leak the bundled
+coffee-grinder fixture into unrelated work. The fixture viewer preserves the
+asset's observed dimensions in runtime evidence while normalizing its largest
+rendered dimension for stable camera framing; application code may replace
+this with an approved, product-specific camera contract.
+
+Use `?motion=reduce` for deterministic fixture screenshots. It disables the
+nonessential automatic orbit while preserving manual camera interaction and
+the operating system's `prefers-reduced-motion` behavior.
 
 `node_modules`, Vite cache, build output, TypeScript build info, and candidate
 GLBs are runtime state. They must not be packaged into `skills/3d-craft/`.

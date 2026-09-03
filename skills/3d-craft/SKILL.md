@@ -46,8 +46,12 @@ nearest supported slice without pretending the full request was completed.
 4. Run `scripts/3d_craft.py doctor --json` before tool-backed work.
 5. Declare the durable authoring authority and output boundary.
 6. Create or load the scene contract before building.
-7. Work in causal stages and stop at the first failed hard gate.
-8. Bind every delivered claim to observed evidence, hashes, and versions.
+7. After asset and GLB inspection, run `bind-asset` to create the manifest and
+   bind the scene hash; do not hand-invent hashes.
+8. For rendered work, run `init-visual-review`, inspect the bound views, and
+   complete every critical/major feature assessment before claiming identity.
+9. Work in causal stages and stop at the first failed hard gate.
+10. Bind every delivered claim to observed evidence, hashes, and versions.
 
 For an end-to-end product asset, the default route is:
 
@@ -80,6 +84,8 @@ Use only these V0.1 values:
 
 Do not invent a route as free text. A valid route returns selected references,
 required capabilities, hard gates, and explicit unsupported features.
+`runtime` is invalid for a Blender-only target, and `rendered` is invalid for a
+Web3D-only target; use `assured` for the highest evidence applicable to either.
 
 ## Authority and evidence
 
@@ -145,7 +151,9 @@ browser profile.
 
 Define units, Z-up authoring coordinates, dimensions, origin policy,
 components, materials, identity features, cameras, web runtime, budgets, and
-required evidence. Unknown budgets are `provisional`, never measured facts.
+required evidence. `required_evidence` must exactly match the deterministic
+route; do not add unsupported evidence names or silently omit a routed artifact.
+Unknown budgets are `provisional`, never measured facts.
 
 ### 2. Blockout
 
@@ -158,7 +166,10 @@ lighting while the shape contract still fails.
 Inspect dimensions, transforms, hierarchy, naming, topology, normals, UVs,
 materials, missing textures, cameras, and lights. Render fixed front, back,
 left, right, top, and perspective views. Failed proportions return to
-blockout; materials do not conceal a shape failure.
+blockout; materials do not conceal a shape failure. The render script proves
+that images exist and bind to the candidate—it does not prove that they look
+correct. Initialize `visual-review.json`, inspect the images, and record
+feature-level verdicts, views, notes, reviewer identity, and review time.
 
 ### 4. Production modeling and look development
 
@@ -186,6 +197,9 @@ background-preferred. Wait for semantic readiness, inspect console and network,
 verify RAF progress and renderer statistics, test remount/dispose behavior, and
 check desktop plus mobile layout. A final screenshot may use one bounded
 foreground interval; restore or finalize the exact managed task afterward.
+Copy accepted screenshots into the run's `evidence/` directory before writing
+`browser-runtime.json`; external browser-cache paths are not portable delivery
+evidence.
 
 ### 8. Validation and repair
 
@@ -210,6 +224,11 @@ Apply only relevant gates, but never waive one silently:
 
 A hard-gate failure produces `FAIL` without a compensating total score. V0.1
 does not issue a numeric quality score.
+
+`static` evidence is useful for preliminary structural inspection, but it
+cannot prove silhouette or key visual features. Its identity and delivery
+gates therefore remain `UNVERIFIED`; use `rendered` or `assured` for a finished
+Blender asset.
 
 ## Default V0.1 fixture budgets
 
@@ -236,12 +255,28 @@ Run tools from the Skill directory or use absolute paths:
 ```bash
 python3 scripts/3d_craft.py doctor --json
 python3 scripts/3d_craft.py init-run --project-key demo --json
-blender --background asset.blend --python scripts/blend_inspect.py -- \
+blender --background asset.blend --python-exit-code 2 \
+  --python scripts/blend_inspect.py -- \
+  --scene-contract /absolute/run/scene.json \
   --output /absolute/run/evidence/blend-inspection.json
-blender --background asset.blend --python scripts/render_evidence.py -- \
+blender --background asset.blend --python-exit-code 2 \
+  --python scripts/render_evidence.py -- \
+  --scene-contract /absolute/run/scene.json \
   --output-dir /absolute/run/evidence
 node scripts/gltf_validate.mjs asset.glb \
   --output /absolute/run/evidence/gltf-validation.json
+python3 scripts/3d_craft.py bind-asset \
+  --run-dir /absolute/run \
+  --source /absolute/source.blend \
+  --license MIT \
+  --license-subject "original asset" \
+  --json
+python3 scripts/3d_craft.py init-visual-review \
+  --run-dir /absolute/run \
+  --reviewer-kind agent \
+  --reviewer-name "<agent identity>" \
+  --json
+# Inspect the fixed views, then complete evidence/visual-review.json.
 python3 scripts/3d_craft.py validate \
   --run-dir /absolute/run --json
 ```
@@ -258,7 +293,8 @@ Deliver only what was produced and checked:
 - Blender and runtime versions;
 - inspection, fixed-view render, GLB, browser, and performance evidence;
 - gate status and issue list;
-- exact reproducibility commands;
+- exact candidate-scoped command receipts, replayed only with a new empty run
+  directory;
 - repairs attempted and same-evidence verdicts;
 - unsupported, skipped, and unverified scope.
 

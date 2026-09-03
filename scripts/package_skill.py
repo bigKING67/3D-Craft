@@ -54,10 +54,11 @@ def validate_source() -> None:
 def build(output: Path) -> dict[str, object]:
     if not output.is_absolute():
         raise ValueError("--output must be an absolute path")
+    output = output.resolve()
     if output.suffix.lower() != ".zip":
         raise ValueError("--output must end in .zip")
-    if output == SKILL or SKILL in output.parents:
-        raise ValueError("package output must remain outside the installable Skill")
+    if output == ROOT or ROOT in output.parents:
+        raise ValueError("package output must remain outside the source repository")
 
     validate_source()
     files = source_files()

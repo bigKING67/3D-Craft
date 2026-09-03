@@ -33,6 +33,26 @@ def rounded(values) -> list[float]:
     return [round(float(value), 6) for value in values]
 
 
+def normalized_name(value: object) -> str:
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def asset_scope(objects: list[bpy.types.Object]) -> tuple[list[bpy.types.Object], list[bpy.types.Object]]:
+    roots = [obj for obj in objects if obj.get("3d_craft_profile") in {"product-asset", "prop"}]
+    scoped: set[bpy.types.Object] = set()
+
+    def include(obj: bpy.types.Object) -> None:
+        if obj in scoped:
+            return
+        scoped.add(obj)
+        for child in obj.children:
+            include(child)
+
+    for root in roots:
+        include(root)
+    return roots, sorted(scoped, key=lambda item: item.name)
+
+
 def scene_bounds(objects: list[bpy.types.Object]) -> tuple[list[float], list[float], list[float]]:
     corners = []
     for obj in objects:
@@ -67,24 +87,29 @@ def inspect_mesh(obj: bpy.types.Object) -> dict:
 def main() -> int:
     args = arguments()
     output = Path(args.output).expanduser().resolve()
+    if output.exists():
+        raise ValueError("inspection output already exists; create a new run for a new candidate")
     output.parent.mkdir(parents=True, exist_ok=True)
     blend_path = Path(bpy.data.filepath).resolve() if bpy.data.filepath else None
     contract = {}
     if args.scene_contract:
         contract = json.loads(Path(args.scene_contract).read_text(encoding="utf-8"))
     objects = sorted(bpy.context.scene.objects, key=lambda item: item.name)
+    asset_roots, asset_objects = asset_scope(objects)
+    asset_object_set = set(asset_objects)
+    mesh_objects = [obj for obj in asset_objects if obj.type == "MESH" and not obj.hide_render]
     object_rows = []
     total_triangles = 0
     non_manifold_total = 0
     unapplied = []
     for obj in objects:
         mesh = inspect_mesh(obj) if obj.type == "MESH" else None
-        if mesh:
+        if mesh and obj in asset_object_set:
             total_triangles += mesh["triangles"]
             non_manifold_total += mesh["non_manifold_edges"]
         scale_ok = all(math.isclose(value, 1.0, abs_tol=1e-5) for value in obj.scale)
         rotation_ok = all(math.isclose(value, 0.0, abs_tol=1e-5) for value in obj.rotation_euler)
-        if obj.type == "MESH" and not (scale_ok and rotation_ok):
+        if obj in asset_object_set and not (scale_ok and rotation_ok):
             unapplied.append(obj.name)
         object_rows.append(
             {
@@ -99,29 +124,56 @@ def main() -> int:
                 "mesh": mesh,
             }
         )
+    asset_materials = {
+        slot.material
+        for obj in mesh_objects
+        for slot in obj.material_slots
+        if slot.material
+    }
+    used_images = {
+        node.image
+        for material in asset_materials
+        if material.node_tree
+        for node in material.node_tree.nodes
+        if node.type == "TEX_IMAGE" and node.image
+    }
     images = []
     missing_textures = []
-    for image in bpy.data.images:
+    for image in sorted(used_images, key=lambda item: item.name):
         if image.source != "FILE":
             continue
         resolved = Path(bpy.path.abspath(image.filepath)).resolve()
-        row = {"name": image.name, "path": str(resolved), "exists": resolved.is_file()}
+        exists = resolved.is_file() or image.packed_file is not None
+        row = {"name": image.name, "path": str(resolved), "exists": exists, "packed": image.packed_file is not None}
         images.append(row)
         if not row["exists"]:
             missing_textures.append(row)
-    mesh_objects = [obj for obj in objects if obj.type == "MESH" and obj.name.startswith("GRINDER_")]
     bbox_min, bbox_max, dimensions = scene_bounds(mesh_objects)
     expected_components = contract.get("components", [])
     expected_materials = contract.get("materials", [])
-    names = {obj.name.removeprefix("GRINDER_").lower().replace("-", "_") for obj in objects}
-    material_names = {material.name.lower().replace("-", "_") for material in bpy.data.materials}
-    missing_components = [name for name in expected_components if name.lower().replace("-", "_") not in names]
-    missing_materials = [name for name in expected_materials if name.lower().replace("-", "_") not in material_names]
+    component_names = {
+        normalized_name(obj.get("3d_craft_component"))
+        for obj in mesh_objects
+        if obj.get("3d_craft_component")
+    }
+    component_names.update(normalized_name(obj.name) for obj in mesh_objects)
+    material_names = {normalized_name(material.name) for material in asset_materials}
+    missing_components = [name for name in expected_components if normalized_name(name) not in component_names]
+    missing_materials = [name for name in expected_materials if normalized_name(name) not in material_names]
     expected_dimensions = contract.get("dimensions", {})
+    topology_policy = contract.get("topology_policy", "closed")
     tolerance = float(expected_dimensions.get("tolerance_percent", 5.0)) / 100.0
     expected_vector = [expected_dimensions.get("width"), expected_dimensions.get("depth"), expected_dimensions.get("height")]
     dimension_ok = all(expected is None or abs(actual - expected) <= expected * tolerance for actual, expected in zip(dimensions, expected_vector))
     failures = []
+    if not blend_path or not blend_path.is_file():
+        failures.append("Blender source is unsaved")
+    if not asset_roots:
+        failures.append("no product/prop root declares 3d_craft_profile")
+    if not mesh_objects:
+        failures.append("declared product/prop root contains no renderable mesh objects")
+    if bpy.context.scene.unit_settings.system != "METRIC" or not math.isclose(bpy.context.scene.unit_settings.scale_length, 1.0, abs_tol=1e-8):
+        failures.append("scene units are not meters")
     if missing_components:
         failures.append(f"missing components: {', '.join(missing_components)}")
     if missing_materials:
@@ -129,7 +181,9 @@ def main() -> int:
     if missing_textures:
         failures.append("missing external textures")
     if unapplied:
-        failures.append(f"unapplied mesh transforms: {', '.join(unapplied)}")
+        failures.append(f"unapplied asset transforms: {', '.join(unapplied)}")
+    if non_manifold_total and topology_policy == "closed":
+        failures.append(f"non-manifold asset edges: {non_manifold_total}")
     if not dimension_ok:
         failures.append("scene dimensions exceed tolerance")
     report = {
@@ -137,9 +191,10 @@ def main() -> int:
         "status": "PASS" if not failures else "FAIL",
         "blender_version": bpy.app.version_string,
         "blend": {"path": str(blend_path) if blend_path else None, "sha256": sha256(blend_path) if blend_path and blend_path.is_file() else None},
-        "scene": {"units": bpy.context.scene.unit_settings.system, "bbox_min": bbox_min, "bbox_max": bbox_max, "dimensions": dimensions, "objects": len(objects), "meshes": len(mesh_objects), "triangles": total_triangles, "cameras": [obj.name for obj in objects if obj.type == "CAMERA"], "lights": [obj.name for obj in objects if obj.type == "LIGHT"]},
+        "scene": {"units": bpy.context.scene.unit_settings.system, "unit_scale": bpy.context.scene.unit_settings.scale_length, "bbox_min": bbox_min, "bbox_max": bbox_max, "dimensions": dimensions, "objects": len(objects), "meshes": len(mesh_objects), "triangles": total_triangles, "cameras": [obj.name for obj in objects if obj.type == "CAMERA"], "lights": [obj.name for obj in objects if obj.type == "LIGHT"]},
+        "asset_scope": {"roots": [obj.name for obj in asset_roots], "objects": [obj.name for obj in asset_objects], "mesh_objects": [obj.name for obj in mesh_objects], "component_tags": sorted(component_names)},
         "coverage": {"components_percent": round(100 * (len(expected_components) - len(missing_components)) / max(1, len(expected_components))), "materials_percent": round(100 * (len(expected_materials) - len(missing_materials)) / max(1, len(expected_materials))), "missing_components": missing_components, "missing_materials": missing_materials},
-        "integrity": {"unapplied_mesh_transforms": unapplied, "non_manifold_edges": non_manifold_total, "missing_textures": missing_textures, "images": images, "dimension_within_tolerance": dimension_ok},
+        "integrity": {"topology_policy": topology_policy, "unapplied_mesh_transforms": unapplied, "non_manifold_edges": non_manifold_total, "missing_textures": missing_textures, "images": images, "dimension_within_tolerance": dimension_ok},
         "objects": object_rows,
         "failures": failures,
     }

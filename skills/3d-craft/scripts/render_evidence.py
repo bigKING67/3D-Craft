@@ -17,6 +17,7 @@ def arguments() -> argparse.Namespace:
     argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--scene-contract", required=True)
     parser.add_argument("--resolution", type=int, default=768)
     return parser.parse_args(argv)
 
@@ -29,6 +30,44 @@ def sha256(path: Path) -> str:
 def point_camera(camera: bpy.types.Object, position: tuple[float, float, float], target: Vector) -> None:
     camera.location = position
     camera.rotation_euler = (target - camera.location).to_track_quat("-Z", "Y").to_euler()
+
+
+def camera_contract(contract: dict) -> tuple[Vector, dict[str, float], float]:
+    dimensions = contract.get("dimensions", {})
+    try:
+        width = float(dimensions["width"])
+        depth = float(dimensions["depth"])
+        height = float(dimensions["height"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("scene contract requires positive width, depth, and height") from error
+    if not all(math.isfinite(value) and value > 0 for value in (width, depth, height)):
+        raise ValueError("scene contract dimensions must be finite positive numbers")
+    origin_policy = contract.get("origin_policy")
+    if origin_policy == "object-base-center":
+        target = Vector((0.0, 0.0, height / 2.0))
+    elif origin_policy == "world-origin":
+        target = Vector((0.0, 0.0, 0.0))
+    elif origin_policy == "declared-custom":
+        framing_center = contract.get("framing_center")
+        if not isinstance(framing_center, list) or len(framing_center) != 3:
+            raise ValueError("declared-custom origin requires a three-number framing_center")
+        try:
+            target = Vector(tuple(float(value) for value in framing_center))
+        except (TypeError, ValueError) as error:
+            raise ValueError("framing_center must contain three finite numbers") from error
+        if not all(math.isfinite(value) for value in target):
+            raise ValueError("framing_center must contain three finite numbers")
+    else:
+        raise ValueError("unsupported origin_policy in scene contract")
+    margin = 1.32
+    scales = {
+        "front": max(width, height) * margin,
+        "back": max(width, height) * margin,
+        "left": max(depth, height) * margin,
+        "right": max(depth, height) * margin,
+        "top": max(width, depth) * margin,
+    }
+    return target, scales, max(width, depth, height)
 
 
 def build_contact_sheet(paths: list[Path], output: Path, thumb: int = 256) -> None:
@@ -62,6 +101,20 @@ def main() -> int:
     args = arguments()
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    owned_outputs = [
+        *(output_dir / f"{view}.png" for view in ("front", "back", "left", "right", "top", "perspective")),
+        output_dir / "contact-sheet.png",
+        output_dir / "lookdev-perspective.png",
+        output_dir / "render-evidence.json",
+    ]
+    if any(path.exists() for path in owned_outputs):
+        raise ValueError("render evidence already exists; create a new run for a new candidate")
+    contract_path = Path(args.scene_contract).expanduser().resolve(strict=True)
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    if contract.get("schema") != "3d-craft.scene.v1":
+        raise ValueError("--scene-contract must use schema 3d-craft.scene.v1")
+    target, orthographic_scales, maximum_dimension = camera_contract(contract)
+    blend_path = Path(bpy.data.filepath).resolve() if bpy.data.filepath else None
     scene = bpy.context.scene
     scene.render.resolution_x = args.resolution
     scene.render.resolution_y = args.resolution
@@ -84,18 +137,20 @@ def main() -> int:
         scene.collection.objects.link(camera)
     scene.camera = camera
     camera.data.type = "ORTHO"
-    camera.data.ortho_scale = 0.42
-    target = Vector((0.0, 0.0, 0.16))
+    camera.data.clip_start = max(maximum_dimension / 1000.0, 0.0001)
+    camera.data.clip_end = max(maximum_dimension * 50.0, 10.0)
+    distance = maximum_dimension * 3.125
     positions = {
-        "front": (0.0, -1.0, 0.16),
-        "back": (0.0, 1.0, 0.16),
-        "left": (-1.0, 0.0, 0.16),
-        "right": (1.0, 0.0, 0.16),
-        "top": (0.0, 0.0, 1.1),
+        "front": target + Vector((0.0, -distance, 0.0)),
+        "back": target + Vector((0.0, distance, 0.0)),
+        "left": target + Vector((-distance, 0.0, 0.0)),
+        "right": target + Vector((distance, 0.0, 0.0)),
+        "top": target + Vector((0.0, 0.0, distance)),
     }
     rendered: list[Path] = []
     metadata = []
     for name, position in positions.items():
+        camera.data.ortho_scale = orthographic_scales[name]
         point_camera(camera, position, target)
         path = output_dir / f"{name}.png"
         scene.render.filepath = str(path)
@@ -104,7 +159,8 @@ def main() -> int:
         metadata.append({"view": name, "path": str(path), "sha256": sha256(path), "camera_location": [round(value, 6) for value in camera.location], "camera_rotation": [round(value, 6) for value in camera.rotation_euler], "camera_type": "ORTHO", "ortho_scale": camera.data.ortho_scale})
     camera.data.type = "PERSP"
     camera.data.lens = 70
-    point_camera(camera, (0.48, -0.62, 0.42), target)
+    perspective_offset = Vector((1.5, -1.9375, 0.8125)) * maximum_dimension
+    point_camera(camera, target + perspective_offset, target)
     perspective = output_dir / "perspective.png"
     scene.render.filepath = str(perspective)
     bpy.ops.render.render(write_still=True)
@@ -121,6 +177,17 @@ def main() -> int:
         "schema": "3d-craft.render-evidence.v1",
         "status": "PASS",
         "blender_version": bpy.app.version_string,
+        "blend": {
+            "path": str(blend_path) if blend_path else None,
+            "sha256": sha256(blend_path) if blend_path and blend_path.is_file() else None,
+        },
+        "scene_contract": {"path": str(contract_path), "sha256": sha256(contract_path)},
+        "framing": {
+            "target": [round(value, 6) for value in target],
+            "maximum_dimension": maximum_dimension,
+            "margin": 1.32,
+            "source": "scene-contract",
+        },
         "renderers": {"structure": "BLENDER_WORKBENCH", "lookdev": "BLENDER_EEVEE"},
         "resolution": [args.resolution, args.resolution],
         "views": metadata,

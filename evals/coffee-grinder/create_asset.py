@@ -35,7 +35,6 @@ def clear_scene() -> None:
 
 def make_material(name: str, color: tuple[float, float, float, float], metallic: float, roughness: float, transmission: float = 0.0) -> bpy.types.Material:
     material = bpy.data.materials.new(name)
-    material.use_nodes = True
     material.diffuse_color = color
     shader = material.node_tree.nodes.get("Principled BSDF")
     shader.inputs["Base Color"].default_value = color

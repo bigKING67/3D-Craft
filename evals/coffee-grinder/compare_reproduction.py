@@ -42,19 +42,29 @@ def main() -> int:
     parser.add_argument("--second-gltf", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    first_scene = normalized_scene(load(args.first_inspection))
-    second_scene = normalized_scene(load(args.second_inspection))
-    first_gltf = load(args.first_gltf)["semantic"]["semantic_sha256"]
-    second_gltf = load(args.second_gltf)["semantic"]["semantic_sha256"]
+    first_inspection_report = load(args.first_inspection)
+    second_inspection_report = load(args.second_inspection)
+    first_gltf_report = load(args.first_gltf)
+    second_gltf_report = load(args.second_gltf)
+    first_scene = normalized_scene(first_inspection_report)
+    second_scene = normalized_scene(second_inspection_report)
+    first_gltf = first_gltf_report["semantic"]["semantic_sha256"]
+    second_gltf = second_gltf_report["semantic"]["semantic_sha256"]
     first_scene_digest = digest(first_scene)
     second_scene_digest = digest(second_scene)
     report = {
         "schema": "3d-craft.reproduction.v1",
         "match": first_scene_digest == second_scene_digest and first_gltf == second_gltf,
+        "candidate": {
+            "blend_sha256": first_inspection_report["blend"]["sha256"],
+            "gltf_sha256": first_gltf_report["asset"]["sha256"],
+        },
         "scene": {"first_sha256": first_scene_digest, "second_sha256": second_scene_digest, "match": first_scene_digest == second_scene_digest},
         "gltf": {"first_semantic_sha256": first_gltf, "second_semantic_sha256": second_gltf, "match": first_gltf == second_gltf},
     }
     output = Path(args.output).expanduser().resolve()
+    if output.exists():
+        raise ValueError("reproduction output already exists; create a new run for a new candidate")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(report, sort_keys=True))

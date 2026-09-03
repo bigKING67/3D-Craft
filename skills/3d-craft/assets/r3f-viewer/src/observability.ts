@@ -11,6 +11,8 @@ export interface ThreeDCraftSnapshot {
     meshes: number
     materials: number
     dimensions: readonly [number, number, number]
+    nodeNames: readonly string[]
+    materialNames: readonly string[]
     camera_position: readonly [number, number, number]
   }>
   readonly renderer: Readonly<{

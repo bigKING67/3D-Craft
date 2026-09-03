@@ -5,9 +5,9 @@ import {
   Box3,
   Color,
   Group,
+  Material,
   MathUtils,
   Mesh,
-  MeshStandardMaterial,
   Object3D,
   SRGBColorSpace,
   Texture,
@@ -29,6 +29,8 @@ interface SceneFacts {
   meshes: number
   materials: number
   dimensions: [number, number, number]
+  nodeNames: string[]
+  materialNames: string[]
 }
 
 interface AssetSceneProps {
@@ -39,18 +41,25 @@ interface AssetSceneProps {
   onFacts: (facts: SceneFacts) => void
 }
 
+const DISPLAY_MAX_DIMENSION_METERS = 0.32
+
 function disposeObject(root: Object3D): void {
-  const disposedMaterials = new Set<MeshStandardMaterial>()
+  const disposedMaterials = new Set<Material>()
+  const disposedTextures = new Set<Texture>()
   root.traverse((child) => {
     if (!(child instanceof Mesh)) return
     child.geometry.dispose()
     const materials = Array.isArray(child.material) ? child.material : [child.material]
     for (const material of materials) {
-      if (disposedMaterials.has(material as MeshStandardMaterial)) continue
-      disposedMaterials.add(material as MeshStandardMaterial)
+      if (disposedMaterials.has(material)) continue
+      disposedMaterials.add(material)
       for (const value of Object.values(material)) {
         if (value && typeof value === 'object' && 'isTexture' in value && (value as Texture).isTexture) {
-          ;(value as Texture).dispose()
+          const texture = value as Texture
+          if (!disposedTextures.has(texture)) {
+            disposedTextures.add(texture)
+            texture.dispose()
+          }
         }
       }
       material.dispose()
@@ -65,6 +74,7 @@ function LoadedAsset({ assetUrl, onStatus, onFacts }: Pick<AssetSceneProps, 'ass
   useEffect(() => {
     let cancelled = false
     let loadedRoot: Group | null = null
+    setRoot(null)
     onStatus('loading')
     const loader = new GLTFLoader()
     loader.load(
@@ -77,13 +87,26 @@ function LoadedAsset({ assetUrl, onStatus, onFacts }: Pick<AssetSceneProps, 'ass
         const bounds = new Box3().setFromObject(gltf.scene)
         const size = bounds.getSize(new Vector3())
         const center = bounds.getCenter(new Vector3())
-        gltf.scene.position.sub(center)
-        gltf.scene.position.y += size.y / 2
+        const maximumDimension = Math.max(size.x, size.y, size.z)
+        if (!Number.isFinite(maximumDimension) || maximumDimension <= 0) {
+          disposeObject(gltf.scene)
+          onStatus('error', 'The GLB has no finite renderable bounds.')
+          return
+        }
+        const displayScale = DISPLAY_MAX_DIMENSION_METERS / maximumDimension
+        const displayRoot = new Group()
+        displayRoot.name = '3D_Craft_Display_Root'
+        displayRoot.add(gltf.scene)
+        displayRoot.scale.setScalar(displayScale)
+        displayRoot.position.copy(center).multiplyScalar(-displayScale)
+        displayRoot.position.y += size.y * displayScale / 2
         let objects = 0
         let meshes = 0
-        const materials = new Set()
+        const nodeNames = new Set<string>()
+        const materials = new Set<Material>()
         gltf.scene.traverse((child) => {
           objects += 1
+          if (child !== gltf.scene && child.name) nodeNames.add(child.name)
           if (child instanceof Mesh) {
             meshes += 1
             child.castShadow = false
@@ -97,13 +120,18 @@ function LoadedAsset({ assetUrl, onStatus, onFacts }: Pick<AssetSceneProps, 'ass
           meshes,
           materials: materials.size,
           dimensions: [size.x, size.z, size.y],
+          nodeNames: [...nodeNames].sort(),
+          materialNames: [...materials].map((material) => material.name).filter(Boolean).sort(),
         })
-        loadedRoot = gltf.scene
+        loadedRoot = displayRoot
+        noteMount()
         setRoot(loadedRoot)
         onStatus('ready')
       },
       undefined,
-      (error) => onStatus('error', error instanceof Error ? error.message : String(error)),
+      (error) => {
+        if (!cancelled) onStatus('error', error instanceof Error ? error.message : String(error))
+      },
     )
     return () => {
       cancelled = true
@@ -146,6 +174,8 @@ function RuntimeProbe({ assetUrl, assetSha256, facts, status, error }: {
       scene: Object.freeze({
         ...facts,
         dimensions: Object.freeze([...facts.dimensions]) as unknown as [number, number, number],
+        nodeNames: Object.freeze([...facts.nodeNames]) as unknown as string[],
+        materialNames: Object.freeze([...facts.materialNames]) as unknown as string[],
         camera_position: Object.freeze(camera.position.toArray()) as unknown as [number, number, number],
       }),
       renderer: Object.freeze({
@@ -171,7 +201,7 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
   const controls = useRef<OrbitControlsImpl>(null)
   const [status, setStatus] = useState<ViewerStatus>('loading')
   const [error, setError] = useState('')
-  const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0] })
+  const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0], nodeNames: [], materialNames: [] })
   const callbacks = useMemo(() => ({
     status: (next: ViewerStatus, detail = '') => {
       setStatus(next)
@@ -185,7 +215,6 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
   }), [onFacts, onStatus])
 
   useEffect(() => {
-    noteMount()
     const reset = () => controls.current?.reset()
     window.addEventListener('3d-craft:reset-camera', reset)
     return () => window.removeEventListener('3d-craft:reset-camera', reset)

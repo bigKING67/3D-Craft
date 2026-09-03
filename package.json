@@ -19,8 +19,7 @@
   },
   "devDependencies": {
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
-    "gltf-validator": "2.0.0-dev.3.10"
+    "ajv-formats": "3.0.1"
   },
   "pi": {
     "skills": [

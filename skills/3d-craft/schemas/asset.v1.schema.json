@@ -9,10 +9,48 @@
     "schema": {"const": "3d-craft.asset.v1"},
     "authority": {"enum": ["procedural", "native", "hybrid"]},
     "source": {"$ref": "#/$defs/file"},
-    "derived": {"type": "array", "items": {"$ref": "#/$defs/file"}},
-    "tool_versions": {"type": "object", "additionalProperties": {"type": "string"}},
-    "licenses": {"type": "array", "items": {"type": "object", "required": ["subject", "license"], "properties": {"subject": {"type": "string"}, "license": {"type": "string"}, "source": {"type": "string"}}}},
-    "gltf_summary": {"type": "object", "required": ["nodes", "meshes", "primitives", "materials", "textures", "animations", "triangles", "extensions"], "properties": {"nodes": {"type": "integer", "minimum": 0}, "meshes": {"type": "integer", "minimum": 0}, "primitives": {"type": "integer", "minimum": 0}, "materials": {"type": "integer", "minimum": 0}, "textures": {"type": "integer", "minimum": 0}, "animations": {"type": "integer", "minimum": 0}, "triangles": {"type": "integer", "minimum": 0}, "extensions": {"type": "array", "items": {"type": "string"}}}}
+    "derived": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/file"}},
+    "tool_versions": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}},
+    "licenses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subject", "license"],
+        "properties": {
+          "subject": {"type": "string", "minLength": 1},
+          "license": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "gltf_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "meshes", "primitives", "materials", "textures", "animations", "triangles", "extensions"],
+      "properties": {
+        "nodes": {"type": "integer", "minimum": 0},
+        "meshes": {"type": "integer", "minimum": 0},
+        "primitives": {"type": "integer", "minimum": 0},
+        "materials": {"type": "integer", "minimum": 0},
+        "textures": {"type": "integer", "minimum": 0},
+        "animations": {"type": "integer", "minimum": 0},
+        "triangles": {"type": "integer", "minimum": 0},
+        "extensions": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    }
   },
-  "$defs": {"file": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "bytes"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "bytes": {"type": "integer", "minimum": 0}}}}
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "bytes": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
 }

@@ -3,6 +3,7 @@
   "units": "meters",
   "up_axis": "Z",
   "origin_policy": "object-base-center",
+  "topology_policy": "closed",
   "authoring_mode": "procedural",
   "dimensions": {
     "width": 0.18,
@@ -45,10 +46,13 @@
     "triangles": 75000,
     "draw_calls": 30,
     "textures": 8,
-    "frame_p95_ms": 25
+    "frame_p95_ms": 25,
+    "required_node_coverage_percent": 100,
+    "bbox_drift_percent": 0.5
   },
   "required_evidence": [
     "blend-inspection",
+    "clean-reproduction",
     "front",
     "back",
     "left",
@@ -56,8 +60,11 @@
     "top",
     "perspective",
     "contact-sheet",
+    "lookdev",
+    "visual-review",
     "gltf-validation",
     "browser-runtime",
-    "browser-screenshot"
+    "browser-desktop-screenshot",
+    "browser-mobile-screenshot"
   ]
 }

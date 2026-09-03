@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,20 @@ def digest(path: Path) -> str:
     return value.hexdigest()
 
 
+def write_minimal_glb(path: Path) -> None:
+    document = json.dumps(
+        {"asset": {"version": "2.0", "generator": "3d-craft-release-gate"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"name": "Root"}]},
+        separators=(",", ":"),
+    ).encode()
+    document += b" " * ((4 - len(document) % 4) % 4)
+    total_length = 12 + 8 + len(document)
+    path.write_bytes(
+        struct.pack("<III", 0x46546C67, 2, total_length)
+        + struct.pack("<II", len(document), 0x4E4F534A)
+        + document
+    )
+
+
 def git_state() -> tuple[str | None, bool]:
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
@@ -56,6 +71,9 @@ def git_state() -> tuple[str | None, bool]:
 def gate(output_dir: Path) -> dict[str, object]:
     if not output_dir.is_absolute():
         raise ValueError("--output-dir must be an absolute path")
+    output_dir = output_dir.resolve()
+    if output_dir == ROOT or ROOT in output_dir.parents:
+        raise ValueError("--output-dir must remain outside the source repository")
     if output_dir.exists() and any(output_dir.iterdir()):
         raise ValueError("--output-dir must be absent or empty")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -98,6 +116,39 @@ def gate(output_dir: Path) -> dict[str, object]:
             ]
         )
         checks.append("isolated-package-validation")
+        minimal_glb = temporary / "minimal.glb"
+        gltf_report = temporary / "minimal-gltf-validation.json"
+        write_minimal_glb(minimal_glb)
+        run(
+            [
+                "node",
+                str(extracted / "3d-craft" / "scripts" / "gltf_validate.mjs"),
+                str(minimal_glb),
+                "--output",
+                str(gltf_report),
+            ],
+            cwd=temporary,
+        )
+        gltf_payload = json.loads(gltf_report.read_text(encoding="utf-8"))
+        if gltf_payload.get("status") != "PASS":
+            raise RuntimeError("the packaged glTF validator did not accept the minimal GLB")
+        checks.append("isolated-gltf-runtime")
+        doctor_report = temporary / "isolated-doctor.json"
+        run(
+            [
+                sys.executable,
+                str(extracted / "3d-craft" / "scripts" / "3d_craft.py"),
+                "doctor",
+                "--json",
+                "--output",
+                str(doctor_report),
+            ],
+            cwd=temporary,
+        )
+        doctor_payload = json.loads(doctor_report.read_text(encoding="utf-8"))
+        if doctor_payload.get("capabilities", {}).get("asset.gltf.validate") != "available":
+            raise RuntimeError("the packaged doctor did not observe its bundled glTF validator")
+        checks.append("isolated-doctor-gltf-capability")
 
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         artifact = output_dir / f"3d-craft-{version}.zip"

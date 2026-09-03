@@ -20,7 +20,7 @@ V0.1 supports product and prop assets with one complete path:
 1. route and establish authoring authority;
 2. define the scene and quality contract;
 3. create or inspect a Blender asset;
-4. render fixed-view evidence;
+4. render fixed-view evidence and complete a candidate-bound identity review;
 5. export and validate GLB;
 6. load the asset in a React Three Fiber viewer;
 7. inspect the real browser runtime through browser67;

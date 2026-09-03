@@ -8,10 +8,15 @@ interface SceneFacts {
   meshes: number
   materials: number
   dimensions: [number, number, number]
+  nodeNames: string[]
+  materialNames: string[]
 }
 
 const assetUrl = import.meta.env.VITE_ASSET_URL || '/asset.glb'
 const assetSha256 = import.meta.env.VITE_ASSET_SHA256 || 'unverified'
+const assetName = import.meta.env.VITE_ASSET_NAME || '3D asset'
+const assetDescription = import.meta.env.VITE_ASSET_DESCRIPTION || 'Product or prop candidate for evidence-backed Blender-to-web delivery.'
+const forcedReducedMotion = new URLSearchParams(window.location.search).get('motion') === 'reduce'
 
 function formatMillimeters(value: number): string {
   return value ? `${Math.round(value * 1000)} mm` : '—'
@@ -20,13 +25,13 @@ function formatMillimeters(value: number): string {
 export default function App() {
   const [status, setStatus] = useState<ViewerStatus>('loading')
   const [error, setError] = useState('')
-  const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0] })
+  const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0], nodeNames: [], materialNames: [] })
   const [reducedMotion, setReducedMotion] = useState(false)
   const [sceneKey, setSceneKey] = useState(0)
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => setReducedMotion(media.matches)
+    const update = () => setReducedMotion(forcedReducedMotion || media.matches)
     update()
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
@@ -51,8 +56,8 @@ export default function App() {
       <aside className="evidence-rail" aria-label="Asset evidence summary">
         <div>
           <p className="eyebrow">3D-Craft / V0.1</p>
-          <h1>Coffee grinder</h1>
-          <p className="lede">Original product fixture for reproducible Blender-to-web delivery.</p>
+          <h1>{assetName}</h1>
+          <p className="lede">{assetDescription}</p>
         </div>
 
         <section className="status-block" aria-live="polite">
