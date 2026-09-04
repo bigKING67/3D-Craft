@@ -89,7 +89,7 @@ test('all four schemas validate complete contracts and reject nested drift', asy
   assert.equal(validateScene(customOrigin), true, JSON.stringify(validateScene.errors))
 })
 
-test('viewer pins the validated R3F stack and keeps observability development-only', async () => {
+test('viewer pins the validated R3F stack, splits dependency chunks, and keeps observability development-only', async () => {
   const viewer = path.join(root, 'skills/3d-craft/assets/r3f-viewer')
   const packageJson = JSON.parse(await readFile(path.join(viewer, 'package.json'), 'utf8'))
   const packageLock = JSON.parse(await readFile(path.join(viewer, 'package-lock.json'), 'utf8'))
@@ -102,6 +102,8 @@ test('viewer pins the validated R3F stack and keeps observability development-on
   const observability = await readFile(path.join(viewer, 'src/observability.ts'), 'utf8')
   const assetScene = await readFile(path.join(viewer, 'src/AssetScene.tsx'), 'utf8')
   const app = await readFile(path.join(viewer, 'src/App.tsx'), 'utf8')
+  const viteConfig = await readFile(path.join(viewer, 'vite.config.ts'), 'utf8')
+  const runtimeQa = await readFile(path.join(root, 'skills/3d-craft/references/web3d-runtime-qa.md'), 'utf8')
   assert.match(observability, /import\.meta\.env\.DEV/)
   assert.match(observability, /Object\.freeze/)
   assert.match(assetScene, /DISPLAY_MAX_DIMENSION_METERS/)
@@ -113,4 +115,14 @@ test('viewer pins the validated R3F stack and keeps observability development-on
   assert.match(assetScene, /materialNames: Object\.freeze/)
   assert.match(app, /motion.*reduce/)
   assert.match(app, /forcedReducedMotion \|\| media\.matches/)
+  assert.match(app, /import\('\.\/AssetScene'\)/)
+  assert.match(app, /The 3D runtime could not be loaded/)
+  assert.match(viteConfig, /chunkSizeWarningLimit: 800/)
+  for (const chunk of ['react-runtime', 'three-runtime', 'r3f-runtime', 'vendor']) {
+    assert.match(viteConfig, new RegExp(`name: '${chunk}'`))
+  }
+  assert.match(runtimeQa, /readiness stimulus, not visual acceptance/)
+  assert.match(runtimeQa, /visibilityState.*remains `hidden`/)
+  assert.match(runtimeQa, /`INVALID SAMPLE`/)
+  assert.match(runtimeQa, /absence in production is expected/)
 })

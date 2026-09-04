@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AssetScene } from './AssetScene'
 import type { ViewerStatus } from './observability'
 import './styles.css'
+
+type AssetSceneComponent = typeof import('./AssetScene')['AssetScene']
 
 interface SceneFacts {
   objects: number
@@ -28,6 +29,13 @@ export default function App() {
   const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0], nodeNames: [], materialNames: [] })
   const [reducedMotion, setReducedMotion] = useState(false)
   const [sceneKey, setSceneKey] = useState(0)
+  const [SceneRenderer, setSceneRenderer] = useState<AssetSceneComponent | null>(null)
+
+  const handleStatus = useCallback((next: ViewerStatus, detail = '') => {
+    setStatus(next)
+    setError(detail)
+  }, [])
+  const handleFacts = useCallback((next: SceneFacts) => setFacts(next), [])
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -44,11 +52,22 @@ export default function App() {
     return () => window.removeEventListener('3d-craft:test-remount', remount)
   }, [])
 
-  const handleStatus = useCallback((next: ViewerStatus, detail = '') => {
-    setStatus(next)
-    setError(detail)
-  }, [])
-  const handleFacts = useCallback((next: SceneFacts) => setFacts(next), [])
+  useEffect(() => {
+    let active = true
+    import('./AssetScene')
+      .then(({ AssetScene }) => {
+        if (active) setSceneRenderer(() => AssetScene)
+      })
+      .catch((reason: unknown) => {
+        if (!active) return
+        const detail = reason instanceof Error ? reason.message : String(reason)
+        handleStatus('error', `The 3D runtime could not be loaded: ${detail}`)
+      })
+    return () => {
+      active = false
+    }
+  }, [handleStatus])
+
   const resetCamera = () => window.dispatchEvent(new Event('3d-craft:reset-camera'))
 
   return (
@@ -94,14 +113,16 @@ export default function App() {
           <span>{reducedMotion ? 'Reduced motion' : 'Live orbit'}</span>
         </div>
         <div className="canvas-wrap">
-          <AssetScene
-            key={sceneKey}
-            assetUrl={assetUrl}
-            assetSha256={assetSha256}
-            reducedMotion={reducedMotion}
-            onStatus={handleStatus}
-            onFacts={handleFacts}
-          />
+          {SceneRenderer && (
+            <SceneRenderer
+              key={sceneKey}
+              assetUrl={assetUrl}
+              assetSha256={assetSha256}
+              reducedMotion={reducedMotion}
+              onStatus={handleStatus}
+              onFacts={handleFacts}
+            />
+          )}
           {status === 'loading' && <div className="loading-mark" aria-hidden="true" />}
           <button className="reset-camera" type="button" onClick={resetCamera} disabled={status !== 'ready'}>
             Reset camera

@@ -193,10 +193,12 @@ tests, expose the read-only `window.__THREE_D_CRAFT__` observability snapshot.
 ### 7. Browser runtime QA
 
 Read `references/web3d-runtime-qa.md`. Use a browser67-managed dedicated tab,
-background-preferred. Wait for semantic readiness, inspect console and network,
-verify RAF progress and renderer statistics, test remount/dispose behavior, and
-check desktop plus mobile layout. A final screenshot may use one bounded
-foreground interval; restore or finalize the exact managed task afterward.
+background-preferred. Establish and verify the target viewport before waiting
+for semantic readiness, inspect console and network, verify RAF progress and
+renderer statistics, test remount/dispose behavior, and check desktop plus
+mobile layout. A final screenshot may use one bounded foreground interval;
+restore or finalize the exact managed task afterward. A viewport transaction
+that wakes a hidden canvas is readiness evidence only, not visual acceptance.
 Copy accepted screenshots into the run's `evidence/` directory before writing
 `browser-runtime.json`; external browser-cache paths are not portable delivery
 evidence.
