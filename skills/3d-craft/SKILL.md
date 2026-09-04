@@ -50,8 +50,10 @@ nearest supported slice without pretending the full request was completed.
    bind the scene hash; do not hand-invent hashes.
 8. For rendered work, run `init-visual-review`, inspect the bound views, and
    complete every critical/major feature assessment before claiming identity.
-9. Work in causal stages and stop at the first failed hard gate.
-10. Bind every delivered claim to observed evidence, hashes, and versions.
+9. For runtime work, record browser67 observations in a draft and run
+   `bind-browser-evidence`; do not hand-copy screenshots or asset hashes.
+10. Work in causal stages and stop at the first failed hard gate.
+11. Bind every delivered claim to observed evidence, hashes, and versions.
 
 For an end-to-end product asset, the default route is:
 
@@ -199,9 +201,12 @@ renderer statistics, test remount/dispose behavior, and check desktop plus
 mobile layout. A final screenshot may use one bounded foreground interval;
 restore or finalize the exact managed task afterward. A viewport transaction
 that wakes a hidden canvas is readiness evidence only, not visual acceptance.
-Copy accepted screenshots into the run's `evidence/` directory before writing
-`browser-runtime.json`; external browser-cache paths are not portable delivery
-evidence.
+Write a `3d-craft.browser-runtime-draft.v1` observation as described in
+`references/web3d-runtime-qa.md`, then run `bind-browser-evidence`. The command
+rejects hidden or viewport-mismatched PNGs, verifies that the served GLB hash
+matches the candidate, copies accepted bytes into the run, and writes the
+candidate-bound `browser-runtime.json`. External browser-cache paths remain
+provenance; they are not portable delivery evidence.
 
 ### 8. Validation and repair
 
@@ -279,6 +284,10 @@ python3 scripts/3d_craft.py init-visual-review \
   --reviewer-name "<agent identity>" \
   --json
 # Inspect the fixed views, then complete evidence/visual-review.json.
+python3 scripts/3d_craft.py bind-browser-evidence \
+  --run-dir /absolute/run \
+  --observation /absolute/browser-runtime-draft.json \
+  --json
 python3 scripts/3d_craft.py validate \
   --run-dir /absolute/run --json
 ```

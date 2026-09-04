@@ -121,8 +121,10 @@ python3 skills/3d-craft/scripts/3d_craft.py init-visual-review \
 Inspect the fixed views and complete `evidence/visual-review.json`; its template
 is deliberately `UNVERIFIED`. Create a second clean build and use
 `compare_reproduction.py` before assured validation; then continue with the
-viewer and browser67 steps in
-`skills/3d-craft/SKILL.md`. Do not commit generated `.blend`, `.glb`, renders,
+viewer and browser67 steps in `skills/3d-craft/SKILL.md`. Seal the resulting
+browser observation with `bind-browser-evidence`; it verifies candidate/network
+identity and copies accepted PNGs into the run instead of trusting cache paths
+or hand-written hashes. Do not commit generated `.blend`, `.glb`, renders,
 screenshots, or run state. `bind-asset` derives hashes from observed files; it
 does not infer or grant an asset license.
 

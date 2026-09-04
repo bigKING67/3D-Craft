@@ -22,7 +22,9 @@ support development and do not become Skill runtime dependencies.
 5. **Evidence closeout** — binds claims to files, SHA-256 digests, commands,
    versions, and observed results. Render scripts prove image production;
    feature-level visual assessment remains an explicit, separately bound
-   reviewer action.
+   reviewer action. Browser closeout consumes a normalized browser67 draft,
+   checks candidate/network identity and PNG viewport facts, then atomically
+   creates run-owned evidence under the public browser-runtime Schema.
 6. **Upstream governance** — keeps researched sources, relevant-path freshness,
    license decisions, local destinations, and validation cases outside the
    installed product. See `../UPSTREAM.md` and `../upstreams.lock.json`.

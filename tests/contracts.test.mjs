@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-test('all four schemas validate complete contracts and reject nested drift', async () => {
-  const names = ['run.v1.schema.json', 'scene.v1.schema.json', 'asset.v1.schema.json', 'validation.v1.schema.json']
+test('all six schemas validate complete contracts and reject nested drift', async () => {
+  const names = ['run.v1.schema.json', 'scene.v1.schema.json', 'asset.v1.schema.json', 'validation.v1.schema.json', 'browser-runtime.v1.schema.json', 'browser-runtime-draft.v1.schema.json']
   const schemas = await Promise.all(names.map(async (name) => JSON.parse(await readFile(path.join(root, 'skills/3d-craft/schemas', name), 'utf8'))))
-  assert.equal(new Set(schemas.map((schema) => schema.$id)).size, 4)
+  assert.equal(new Set(schemas.map((schema) => schema.$id)).size, 6)
   const ajv = new Ajv2020({ allErrors: true, strict: true })
   addFormats(ajv)
   for (const schema of schemas) {
@@ -77,6 +77,62 @@ test('all four schemas validate complete contracts and reject nested drift', asy
     const validate = ajv.getSchema(id)
     assert.equal(validate(document), true, JSON.stringify(validate.errors))
   }
+
+  const browser = {
+    schema: '3d-craft.browser-runtime.v1',
+    status: 'ready',
+    runtime: 'browser67',
+    console_errors: 0,
+    asset: { sha256: hash, bytes: 3, url: '/asset.glb' },
+    network: { status: 'PASS', bytes: 3, sha256: hash },
+    raf: { delta: 10 },
+    metrics: { draw_calls: 1, textures: 0, frame_p95_ms: 8 },
+    lifecycle: { remount_test_status: 'PASS', ready_after_clean_reload: true },
+    cross_runtime: { required_node_coverage_percent: 100, bbox_drift_percent: 0.1 },
+    desktop_screenshot: { path: '/tmp/desktop.png', sha256: hash, bytes: 1, visual_review: 'PASS' },
+    responsive_layout: { status: 'PASS', horizontal_overflow: false },
+    warnings: [],
+    unverified: [],
+  }
+  const validateBrowser = ajv.getSchema('https://3d-craft.local/schemas/browser-runtime.v1.schema.json')
+  assert.equal(validateBrowser(browser), true, JSON.stringify(validateBrowser.errors))
+  browser.runtime = 'generic-browser'
+  assert.equal(validateBrowser(browser), false)
+  const blockedBrowser = structuredClone(browser)
+  blockedBrowser.runtime = 'browser67'
+  blockedBrowser.status = 'BLOCKED'
+  blockedBrowser.page_status = 'ready'
+  blockedBrowser.blocker = 'browser.capture timed out'
+  delete blockedBrowser.desktop_screenshot
+  assert.equal(validateBrowser(blockedBrowser), true, JSON.stringify(validateBrowser.errors))
+
+  const browserDraft = {
+    schema: '3d-craft.browser-runtime-draft.v1',
+    status: 'ready',
+    asset_url: '/asset.glb',
+    console_errors: 0,
+    network: { status: 'PASS', bytes: 3, sha256: hash },
+    raf: { delta: 10 },
+    metrics: { draw_calls: 1, textures: 0, frame_p95_ms: 8 },
+    lifecycle: { remount_test_status: 'PASS', ready_after_clean_reload: true },
+    cross_runtime: { required_node_coverage_percent: 100, bbox_drift_percent: 0.1 },
+    desktop_screenshot: {
+      source_path: '/tmp/browser67-desktop.png',
+      css_viewport: [1440, 900],
+      device_pixel_ratio: 1,
+      capture_target: 'viewport',
+      visibility_state: 'visible',
+      horizontal_overflow: false,
+      visual_review: 'PASS',
+    },
+    responsive_layout: { status: 'PASS', horizontal_overflow: false },
+    warnings: [],
+    unverified: [],
+  }
+  const validateBrowserDraft = ajv.getSchema('https://3d-craft.local/schemas/browser-runtime-draft.v1.schema.json')
+  assert.equal(validateBrowserDraft(browserDraft), true, JSON.stringify(validateBrowserDraft.errors))
+  browserDraft.desktop_screenshot.visibility_state = 'hidden'
+  assert.equal(validateBrowserDraft(browserDraft), false)
 
   const driftedScene = structuredClone(scene)
   driftedScene.runtime.credential = 'must-not-be-accepted'

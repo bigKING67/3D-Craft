@@ -69,6 +69,34 @@ CAPABILITIES = {
 }
 GATE_STATES = {"pending", "running", "pass", "fail", "unverified", "blocked"}
 HASH_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+BROWSER_REPORT_KEYS = {
+    "schema",
+    "status",
+    "page_status",
+    "blocker",
+    "runtime",
+    "url",
+    "browser_instance_id",
+    "tab_id",
+    "console_errors",
+    "console_warnings",
+    "console_observation",
+    "asset",
+    "network",
+    "raf",
+    "metrics",
+    "lifecycle",
+    "cross_runtime",
+    "desktop_screenshot",
+    "responsive_layout",
+    "mobile_screenshot",
+    "interaction",
+    "scene",
+    "rejected_samples",
+    "warnings",
+    "unverified",
+}
+BROWSER_DRAFT_KEYS = (BROWSER_REPORT_KEYS - {"asset", "runtime"}) | {"asset_url", "schema"}
 
 
 def emit(payload: dict[str, Any], *, as_json: bool, output: str | None = None) -> None:
@@ -676,6 +704,40 @@ def manifest_file(path: Path) -> dict[str, Any]:
     return {"path": str(resolved), "sha256": sha256_file(resolved), "bytes": resolved.stat().st_size}
 
 
+def png_dimensions(path: Path) -> tuple[int, int]:
+    """Read PNG dimensions without adding an imaging dependency."""
+    resolved = path.expanduser().resolve(strict=True)
+    with resolved.open("rb") as handle:
+        header = handle.read(24)
+    if (
+        len(header) != 24
+        or header[:8] != b"\x89PNG\r\n\x1a\n"
+        or header[12:16] != b"IHDR"
+    ):
+        raise ValueError(f"browser screenshot is not a PNG with an IHDR header: {resolved}")
+    width = int.from_bytes(header[16:20], "big")
+    height = int.from_bytes(header[20:24], "big")
+    if width <= 0 or height <= 0:
+        raise ValueError(f"browser screenshot has invalid dimensions: {resolved}")
+    return width, height
+
+
+def copy_file_atomic(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with source.open("rb") as input_handle, os.fdopen(descriptor, "wb") as output_handle:
+            shutil.copyfileobj(input_handle, output_handle)
+            output_handle.flush()
+            os.fsync(output_handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -809,6 +871,213 @@ def visual_review_state(
     return "PASS", "Critical and major identity features passed a candidate-bound fixed-view review."
 
 
+def browser_runtime_errors(browser: Any) -> list[str]:
+    """Validate the portable browser-runtime contract without third-party packages."""
+    if not isinstance(browser, dict):
+        return ["browser runtime report must be an object"]
+    errors: list[str] = []
+    required = {
+        "schema",
+        "status",
+        "runtime",
+        "console_errors",
+        "asset",
+        "network",
+        "raf",
+        "metrics",
+        "lifecycle",
+        "cross_runtime",
+        "responsive_layout",
+        "warnings",
+        "unverified",
+    }
+    if not exact_keys(browser, BROWSER_REPORT_KEYS, required):
+        errors.append("browser runtime keys do not match browser-runtime.v1")
+    if browser.get("schema") != "3d-craft.browser-runtime.v1" or browser.get("runtime") != "browser67":
+        errors.append("browser runtime schema or runtime is invalid")
+    if browser.get("status") not in {"ready", "BLOCKED", "FAIL"}:
+        errors.append("browser runtime status is invalid")
+    if browser.get("status") == "BLOCKED" and (
+        browser.get("page_status") != "ready"
+        or not isinstance(browser.get("blocker"), str)
+        or not browser.get("blocker", "").strip()
+    ):
+        errors.append("a blocked browser report requires page_status ready and a blocker")
+    if browser.get("status") == "ready" and "desktop_screenshot" not in browser:
+        errors.append("a ready browser report requires a desktop screenshot")
+    if not isinstance(browser.get("console_errors"), int) or isinstance(browser.get("console_errors"), bool) or browser["console_errors"] < 0:
+        errors.append("browser console_errors must be a nonnegative integer")
+
+    asset = browser.get("asset")
+    if not exact_keys(asset, {"sha256", "bytes", "url"}, {"sha256", "bytes"}):
+        errors.append("browser asset binding is malformed")
+    elif (
+        not HASH_PATTERN.fullmatch(str(asset.get("sha256")))
+        or not isinstance(asset.get("bytes"), int)
+        or isinstance(asset.get("bytes"), bool)
+        or asset["bytes"] < 0
+        or ("url" in asset and (not isinstance(asset["url"], str) or not asset["url"].strip()))
+    ):
+        errors.append("browser asset binding values are invalid")
+
+    network = browser.get("network")
+    if not exact_keys(network, {"status", "http_status", "bytes", "sha256", "note"}, {"status"}):
+        errors.append("browser network observation is malformed")
+    else:
+        if network.get("status") not in {"PASS", "FAIL"}:
+            errors.append("browser network observation values are invalid")
+        elif network.get("status") == "PASS" and (
+            not isinstance(network.get("bytes"), int)
+            or isinstance(network.get("bytes"), bool)
+            or network["bytes"] < 0
+            or not HASH_PATTERN.fullmatch(str(network.get("sha256")))
+        ):
+            errors.append("a passing browser network observation requires bytes and SHA-256")
+        elif "bytes" in network and (
+            not isinstance(network["bytes"], int) or isinstance(network["bytes"], bool) or network["bytes"] < 0
+        ):
+            errors.append("browser network bytes are invalid")
+        elif "sha256" in network and not HASH_PATTERN.fullmatch(str(network["sha256"])):
+            errors.append("browser network SHA-256 is invalid")
+
+    raf = browser.get("raf")
+    if not exact_keys(raf, {"delta", "start_frame", "end_frame", "status"}, {"delta"}) or not is_number(as_object(raf).get("delta")) or raf["delta"] < 0:
+        errors.append("browser RAF observation is malformed")
+    metrics = browser.get("metrics")
+    metric_keys = {"draw_calls", "textures", "frame_p95_ms"}
+    if not exact_keys(metrics, metric_keys | {"frame_p50_ms", "geometries", "triangles"}, metric_keys) or any(
+        not is_number(as_object(metrics).get(name)) or metrics[name] < 0 for name in metric_keys
+    ):
+        errors.append("browser performance metrics are malformed")
+    lifecycle = browser.get("lifecycle")
+    if not exact_keys(
+        lifecycle,
+        {"remount_test_status", "ready_after_clean_reload", "observed_before_clean_reload"},
+        {"remount_test_status", "ready_after_clean_reload"},
+    ) or as_object(lifecycle).get("remount_test_status") not in {"PASS", "FAIL", "UNVERIFIED"} or not isinstance(
+        as_object(lifecycle).get("ready_after_clean_reload"), bool
+    ):
+        errors.append("browser lifecycle observation is malformed")
+    cross_runtime = browser.get("cross_runtime")
+    cross_keys = {"required_node_coverage_percent", "bbox_drift_percent"}
+    if not exact_keys(cross_runtime, cross_keys | {"note"}, cross_keys) or any(
+        not is_number(as_object(cross_runtime).get(name)) or cross_runtime[name] < 0 for name in cross_keys
+    ):
+        errors.append("browser cross-runtime observation is malformed")
+    responsive = browser.get("responsive_layout")
+    if not exact_keys(
+        responsive,
+        {"status", "horizontal_overflow", "viewport", "scroll_extent"},
+        {"status", "horizontal_overflow"},
+    ) or as_object(responsive).get("status") not in {"PASS", "FAIL", "UNVERIFIED"} or not isinstance(
+        as_object(responsive).get("horizontal_overflow"), bool
+    ):
+        errors.append("browser responsive-layout observation is malformed")
+
+    for name in ("desktop_screenshot", "mobile_screenshot"):
+        entry = browser.get(name)
+        if entry is None:
+            continue
+        screenshot_required = {"path", "sha256", "bytes", "visual_review"}
+        screenshot_allowed = screenshot_required | {
+            "dimensions",
+            "css_viewport",
+            "device_pixel_ratio",
+            "horizontal_overflow",
+            "provenance",
+            "note",
+        }
+        if not exact_keys(entry, screenshot_allowed, screenshot_required):
+            errors.append(f"browser {name} entry is malformed")
+            continue
+        if (
+            not isinstance(entry.get("path"), str)
+            or not HASH_PATTERN.fullmatch(str(entry.get("sha256")))
+            or not isinstance(entry.get("bytes"), int)
+            or isinstance(entry.get("bytes"), bool)
+            or entry["bytes"] < 0
+            or entry.get("visual_review") not in {"PASS", "FAIL", "UNVERIFIED"}
+        ):
+            errors.append(f"browser {name} values are invalid")
+    for name in ("warnings", "unverified"):
+        value = browser.get(name)
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+            errors.append(f"browser {name} must contain only nonempty strings")
+    return errors
+
+
+def screenshot_entry_from_draft(value: Any, *, label: str) -> tuple[Path, dict[str, Any]]:
+    allowed = {
+        "source_path",
+        "css_viewport",
+        "device_pixel_ratio",
+        "capture_target",
+        "visibility_state",
+        "horizontal_overflow",
+        "visual_review",
+        "note",
+    }
+    required = allowed - {"note"}
+    if not exact_keys(value, allowed, required):
+        raise ValueError(f"{label}_screenshot draft keys are invalid")
+    if not isinstance(value.get("source_path"), str) or not value["source_path"].strip():
+        raise ValueError(f"{label}_screenshot.source_path must be a nonempty string")
+    source_path = Path(value["source_path"]).expanduser()
+    if not source_path.is_absolute():
+        raise ValueError(f"{label}_screenshot.source_path must be absolute")
+    source_path = source_path.resolve(strict=True)
+    if not source_path.is_file():
+        raise ValueError(f"{label}_screenshot source is not a file")
+    viewport = value.get("css_viewport")
+    if not (
+        isinstance(viewport, list)
+        and len(viewport) == 2
+        and all(isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in viewport)
+    ):
+        raise ValueError(f"{label}_screenshot.css_viewport must contain two positive integers")
+    dpr = value.get("device_pixel_ratio")
+    if not is_number(dpr) or dpr <= 0:
+        raise ValueError(f"{label}_screenshot.device_pixel_ratio must be positive")
+    if value.get("visibility_state") != "visible":
+        raise ValueError(f"{label}_screenshot is an INVALID SAMPLE because visibility_state is not visible")
+    if value.get("capture_target") not in {"viewport", "full_page"}:
+        raise ValueError(f"{label}_screenshot.capture_target is invalid")
+    if value.get("visual_review") not in {"PASS", "FAIL", "UNVERIFIED"}:
+        raise ValueError(f"{label}_screenshot.visual_review is invalid")
+    if not isinstance(value.get("horizontal_overflow"), bool):
+        raise ValueError(f"{label}_screenshot.horizontal_overflow must be boolean")
+    width, height = png_dimensions(source_path)
+    expected_width = round(viewport[0] * dpr)
+    expected_height = round(viewport[1] * dpr)
+    if width != expected_width or (
+        value["capture_target"] == "viewport" and height != expected_height
+    ) or (
+        value["capture_target"] == "full_page" and height < expected_height
+    ):
+        raise ValueError(
+            f"{label}_screenshot PNG dimensions {width}x{height} do not match "
+            f"the {viewport[0]}x{viewport[1]} CSS viewport at DPR {dpr}"
+        )
+    entry: dict[str, Any] = {
+        "path": "",
+        "sha256": sha256_file(source_path),
+        "bytes": source_path.stat().st_size,
+        "dimensions": [width, height],
+        "css_viewport": viewport,
+        "device_pixel_ratio": dpr,
+        "horizontal_overflow": value["horizontal_overflow"],
+        "visual_review": value["visual_review"],
+        "provenance": {
+            "browser67_path": str(source_path),
+            "capture_target": value["capture_target"],
+            "visibility_state": value["visibility_state"],
+        },
+    }
+    if isinstance(value.get("note"), str) and value["note"].strip():
+        entry["note"] = value["note"]
+    return source_path, entry
+
+
 def bind_asset(args: argparse.Namespace) -> dict[str, Any]:
     """Create asset.json and bind scene/evidence inputs into an initialized run."""
     run_dir = Path(args.run_dir).expanduser()
@@ -914,6 +1183,167 @@ def bind_asset(args: argparse.Namespace) -> dict[str, Any]:
         "asset_manifest": str(run_dir / "asset.json"),
         "source": source_entry,
         "derived": derived,
+    }
+
+
+def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
+    """Seal a browser67 observation and accepted screenshots into the current run."""
+    run_dir = Path(args.run_dir).expanduser()
+    if not run_dir.is_absolute():
+        raise ValueError("--run-dir must be absolute")
+    run_dir = run_dir.resolve()
+    draft_path = Path(args.observation).expanduser()
+    if not draft_path.is_absolute():
+        raise ValueError("--observation must be absolute")
+    draft_path = draft_path.resolve(strict=True)
+    report_path = run_dir / "evidence" / "browser-runtime.json"
+    desktop_path = run_dir / "evidence" / "browser-desktop.png"
+    mobile_path = run_dir / "evidence" / "browser-mobile.png"
+    if report_path.exists():
+        raise ValueError("browser-runtime.json already exists; create a new run for new browser evidence")
+
+    run_path = run_dir / "run.json"
+    scene_path = run_dir / "scene.json"
+    asset_path = run_dir / "asset.json"
+    run = load_json(run_path)
+    scene = load_json(scene_path)
+    asset = load_json(asset_path)
+    draft = load_json(draft_path)
+    expected = expected_route((run or {}).get("route"))
+    if not run or run.get("schema") != "3d-craft.run.v1" or not expected:
+        raise ValueError("run.json is missing or does not contain a deterministic route")
+    run_errors = run_contract_errors(run)
+    if run_errors:
+        raise ValueError("; ".join(run_errors))
+    if not any(name in expected["required_capabilities"] for name in ("browser.navigate", "browser.capture")):
+        raise ValueError("the routed evidence level does not require browser evidence")
+    if not scene or scene_contract_errors(scene):
+        raise ValueError("scene.json is missing or invalid")
+    if not asset or asset_contract_errors(asset):
+        raise ValueError("asset.json is missing or invalid")
+    glb_path = run_dir / "assets" / "asset.glb"
+    glb_entry = declared_file(asset, glb_path)
+    if not verified_file_entry(glb_entry, expected_path=glb_path, root=run_dir / "assets", require_bytes=True):
+        raise ValueError("asset.json does not bind the current assets/asset.glb")
+    if not draft:
+        raise ValueError("browser observation is missing or invalid JSON")
+
+    draft_required = {
+        "schema",
+        "status",
+        "console_errors",
+        "network",
+        "raf",
+        "metrics",
+        "lifecycle",
+        "cross_runtime",
+        "responsive_layout",
+        "warnings",
+        "unverified",
+    }
+    if not exact_keys(draft, BROWSER_DRAFT_KEYS, draft_required):
+        raise ValueError("browser observation keys do not match browser-runtime-draft.v1")
+    if draft.get("schema") != "3d-craft.browser-runtime-draft.v1":
+        raise ValueError("browser observation has the wrong schema")
+
+    desktop_source: Path | None = None
+    desktop_entry: dict[str, Any] | None = None
+    if draft.get("desktop_screenshot") is not None:
+        desktop_source, desktop_entry = screenshot_entry_from_draft(
+            draft.get("desktop_screenshot"), label="desktop"
+        )
+        if desktop_entry["provenance"]["capture_target"] != "viewport":
+            raise ValueError("desktop_screenshot must be a viewport capture")
+    elif draft.get("status") == "ready":
+        raise ValueError("a ready browser observation requires a desktop screenshot")
+    target_devices = as_object(scene.get("runtime")).get("target_devices")
+    mobile_required = isinstance(target_devices, list) and "mobile" in target_devices
+    mobile_source: Path | None = None
+    mobile_entry: dict[str, Any] | None = None
+    if draft.get("mobile_screenshot") is not None:
+        mobile_source, mobile_entry = screenshot_entry_from_draft(
+            draft.get("mobile_screenshot"), label="mobile"
+        )
+    elif mobile_required and draft.get("status") == "ready":
+        raise ValueError("the scene contract requires a mobile screenshot")
+
+    asset_binding = {
+        "sha256": sha256_file(glb_path),
+        "bytes": glb_path.stat().st_size,
+    }
+    asset_url = draft.get("asset_url")
+    if asset_url is not None:
+        if not isinstance(asset_url, str) or not asset_url.strip():
+            raise ValueError("asset_url must be a nonempty string")
+        asset_binding["url"] = asset_url
+    network = as_object(draft.get("network"))
+    if network.get("status") == "PASS" and (
+        network.get("sha256") != asset_binding["sha256"]
+        or network.get("bytes") != asset_binding["bytes"]
+    ):
+        raise ValueError("browser network bytes and SHA-256 do not match the current asset.glb")
+
+    if desktop_entry is not None:
+        desktop_entry["path"] = str(desktop_path)
+    if mobile_entry is not None:
+        mobile_entry["path"] = str(mobile_path)
+    report = {
+        key: value
+        for key, value in draft.items()
+        if key not in {"schema", "asset_url", "desktop_screenshot", "mobile_screenshot"}
+    }
+    report.update(
+        {
+            "schema": "3d-craft.browser-runtime.v1",
+            "runtime": "browser67",
+            "asset": asset_binding,
+        }
+    )
+    if desktop_entry is not None:
+        report["desktop_screenshot"] = desktop_entry
+    if mobile_entry is not None:
+        report["mobile_screenshot"] = mobile_entry
+    report_errors = browser_runtime_errors(report)
+    if report_errors:
+        raise ValueError("; ".join(report_errors))
+
+    destinations: list[tuple[Path, Path]] = []
+    if desktop_source is not None:
+        destinations.append((desktop_source, desktop_path))
+    if mobile_source is not None:
+        destinations.append((mobile_source, mobile_path))
+    occupied = [str(destination) for _, destination in destinations if destination.exists()]
+    if occupied:
+        raise ValueError(f"browser evidence destination already exists: {', '.join(occupied)}")
+    created: list[Path] = []
+    try:
+        for source, destination in destinations:
+            copy_file_atomic(source, destination)
+            created.append(destination)
+        if desktop_entry is not None and not verified_file_entry(
+            desktop_entry, expected_path=desktop_path, root=run_dir / "evidence", require_bytes=True
+        ):
+            raise ValueError("copied desktop screenshot differs from the sealed manifest")
+        if mobile_entry is not None and not verified_file_entry(
+            mobile_entry, expected_path=mobile_path, root=run_dir / "evidence", require_bytes=True
+        ):
+            raise ValueError("copied mobile screenshot differs from the sealed manifest")
+        write_json_atomic(report_path, report)
+        created.append(report_path)
+        run["evidence"] = observed_evidence(run_dir)
+        write_json_atomic(run_path, run)
+    except (OSError, ValueError):
+        for path in reversed(created):
+            path.unlink(missing_ok=True)
+        raise
+    return {
+        "schema": "3d-craft.bind-browser-evidence.v1",
+        "command": "bind-browser-evidence",
+        "status": "pass",
+        "run_dir": str(run_dir),
+        "report": str(report_path),
+        "asset_sha256": asset_binding["sha256"],
+        "screenshots": [str(destination) for _, destination in destinations],
     }
 
 
@@ -1245,11 +1675,26 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             gltf_note = "GLB validity, semantic identity, candidate binding, or approved asset budgets are missing or failing."
         gate_results["gltf"] = gate("gltf", gltf_status, ["evidence/gltf-validation.json"] if gltf else [], gltf_note)
 
-    browser_asset_ok = bool(browser and glb_hash and as_object(browser.get("asset")).get("sha256") == glb_hash)
+    browser_contract_ok = bool(browser and not browser_runtime_errors(browser))
+    browser_asset = as_object((browser or {}).get("asset"))
+    browser_network = as_object((browser or {}).get("network"))
+    browser_asset_ok = bool(
+        browser_contract_ok
+        and glb_hash
+        and browser_asset.get("sha256") == glb_hash
+        and browser_asset.get("bytes") == asset_glb.stat().st_size
+    )
+    browser_network_asset_ok = bool(
+        browser_asset_ok
+        and browser_network.get("status") == "PASS"
+        and browser_network.get("sha256") == glb_hash
+        and browser_network.get("bytes") == asset_glb.stat().st_size
+    )
     browser_blocked = bool(browser and browser.get("status") == "BLOCKED")
     browser_page_ready = bool(browser and (browser.get("status") == "ready" or browser.get("page_status") == "ready"))
     browser_base_ok = bool(
         browser
+        and browser_contract_ok
         and browser.get("schema") == "3d-craft.browser-runtime.v1"
         and browser.get("runtime") == "browser67"
         and browser_page_ready
@@ -1271,6 +1716,7 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         cross_metrics = as_object((browser or {}).get("cross_runtime"))
         cross_core_ok = bool(
             browser
+            and browser_contract_ok
             and browser.get("schema") == "3d-craft.browser-runtime.v1"
             and browser.get("runtime") == "browser67"
             and browser_asset_ok
@@ -1336,12 +1782,13 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         )
         web_core_ok = bool(
             browser
+            and browser_contract_ok
             and browser.get("schema") == "3d-craft.browser-runtime.v1"
             and browser.get("runtime") == "browser67"
             and browser.get("status") == "ready"
             and browser.get("console_errors") == 0
             and browser_asset_ok
-            and as_object(browser.get("network")).get("status") == "PASS"
+            and browser_network_asset_ok
             and is_number(as_object(browser.get("raf")).get("delta"))
             and as_object(browser.get("raf")).get("delta") > 0
             and lifecycle.get("remount_test_status") == "PASS"
@@ -1639,6 +2086,13 @@ def build_parser() -> argparse.ArgumentParser:
     visual.add_argument("--reviewer-kind", choices=("agent", "human"), default="agent")
     visual.add_argument("--reviewer-name")
     visual.add_argument("--json", action="store_true")
+    browser = subparsers.add_parser(
+        "bind-browser-evidence",
+        help="Seal a browser67 observation and run-owned screenshot copies",
+    )
+    browser.add_argument("--run-dir", required=True)
+    browser.add_argument("--observation", required=True)
+    browser.add_argument("--json", action="store_true")
     validate = subparsers.add_parser("validate", help="Aggregate run evidence into hard gates")
     validate.add_argument("--run-dir", required=True)
     validate.add_argument("--json", action="store_true")
@@ -1660,6 +2114,8 @@ def main() -> int:
             payload, exit_code = bind_asset(args), 0
         elif args.command == "init-visual-review":
             payload, exit_code = init_visual_review(args), 0
+        elif args.command == "bind-browser-evidence":
+            payload, exit_code = bind_browser_evidence(args), 0
         else:
             payload, exit_code = validate_run(args)
         emit(payload, as_json=args.json, output=getattr(args, "output", None))

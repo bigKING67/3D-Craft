@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -35,6 +36,69 @@ class ThreeDCraftCliTests(unittest.TestCase):
             "path": str(path),
             "sha256": hashlib.sha256(contents).hexdigest(),
             "bytes": len(contents),
+        }
+
+    @staticmethod
+    def write_png_header(path: Path, width: int, height: int) -> None:
+        path.write_bytes(
+            b"\x89PNG\r\n\x1a\n"
+            + struct.pack(">I", 13)
+            + b"IHDR"
+            + struct.pack(">II", width, height)
+        )
+
+    def browser_draft(
+        self,
+        *,
+        glb: Path,
+        desktop: Path,
+        mobile: Path,
+        desktop_visibility: str = "visible",
+        network_sha256: str | None = None,
+    ) -> dict:
+        glb_bytes = glb.read_bytes()
+        glb_hash = hashlib.sha256(glb_bytes).hexdigest()
+        return {
+            "schema": "3d-craft.browser-runtime-draft.v1",
+            "status": "ready",
+            "asset_url": "/asset.glb",
+            "console_errors": 0,
+            "network": {
+                "status": "PASS",
+                "bytes": len(glb_bytes),
+                "sha256": network_sha256 or glb_hash,
+            },
+            "raf": {"delta": 10},
+            "metrics": {"draw_calls": 1, "textures": 0, "frame_p95_ms": 8},
+            "lifecycle": {"remount_test_status": "PASS", "ready_after_clean_reload": True},
+            "cross_runtime": {"required_node_coverage_percent": 100, "bbox_drift_percent": 0.1},
+            "desktop_screenshot": {
+                "source_path": str(desktop),
+                "css_viewport": [1440, 900],
+                "device_pixel_ratio": 1,
+                "capture_target": "viewport",
+                "visibility_state": desktop_visibility,
+                "horizontal_overflow": False,
+                "visual_review": "PASS",
+            },
+            "responsive_layout": {
+                "status": "PASS",
+                "horizontal_overflow": False,
+                "viewport": [390, 844],
+                "scroll_extent": [390, 1269],
+            },
+            "mobile_screenshot": {
+                "source_path": str(mobile),
+                "css_viewport": [390, 844],
+                "device_pixel_ratio": 1,
+                "capture_target": "full_page",
+                "visibility_state": "visible",
+                "horizontal_overflow": False,
+                "visual_review": "PASS",
+                "note": "Layout evidence only; physical mobile GPU remains unverified.",
+            },
+            "warnings": [],
+            "unverified": ["Physical-mobile GPU frame timing was not measured."],
         }
 
     def create_valid_run(
@@ -245,8 +309,8 @@ class ThreeDCraftCliTests(unittest.TestCase):
                     "status": "ready",
                     "runtime": "browser67",
                     "console_errors": 0,
-                    "asset": {"sha256": glb_entry["sha256"]},
-                    "network": {"status": "PASS"},
+                    "asset": {"sha256": glb_entry["sha256"], "bytes": glb_entry["bytes"]},
+                    "network": {"status": "PASS", "bytes": glb_entry["bytes"], "sha256": glb_entry["sha256"]},
                     "raf": {"delta": 10},
                     "metrics": {"draw_calls": 1, "textures": 0, "frame_p95_ms": 8},
                     "lifecycle": {"remount_test_status": "PASS", "ready_after_clean_reload": True},
@@ -513,6 +577,160 @@ class ThreeDCraftCliTests(unittest.TestCase):
             payload = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
             cross_runtime = next(item for item in payload["gates"] if item["id"] == "cross_runtime")
             self.assertEqual(cross_runtime["status"], "FAIL")
+
+    def test_bind_browser_evidence_seals_candidate_and_run_owned_pngs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            fixture = self.create_valid_run(run_dir)
+            for path in (
+                run_dir / "evidence" / "browser-runtime.json",
+                run_dir / "evidence" / "browser-desktop.png",
+                run_dir / "evidence" / "browser-mobile.png",
+            ):
+                path.unlink()
+            desktop_source = run_dir / "source" / "browser67-desktop.png"
+            mobile_source = run_dir / "source" / "browser67-mobile.png"
+            self.write_png_header(desktop_source, 1440, 900)
+            self.write_png_header(mobile_source, 390, 1269)
+            draft_path = run_dir / "source" / "browser-observation.json"
+            self.write_json(
+                draft_path,
+                self.browser_draft(
+                    glb=fixture["glb"],
+                    desktop=desktop_source,
+                    mobile=mobile_source,
+                ),
+            )
+
+            payload = self.run_cli(
+                "bind-browser-evidence",
+                "--run-dir",
+                str(run_dir),
+                "--observation",
+                str(draft_path),
+            )
+            report_path = run_dir / "evidence" / "browser-runtime.json"
+            report = json.loads(report_path.read_text())
+            desktop_copy = run_dir / "evidence" / "browser-desktop.png"
+            mobile_copy = run_dir / "evidence" / "browser-mobile.png"
+            glb_bytes = Path(fixture["glb"]).read_bytes()
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(report["asset"]["sha256"], hashlib.sha256(glb_bytes).hexdigest())
+            self.assertEqual(report["network"]["sha256"], report["asset"]["sha256"])
+            self.assertEqual(report["desktop_screenshot"]["dimensions"], [1440, 900])
+            self.assertEqual(report["mobile_screenshot"]["dimensions"], [390, 1269])
+            self.assertEqual(report["desktop_screenshot"]["path"], str(desktop_copy.resolve()))
+            self.assertEqual(desktop_copy.read_bytes(), desktop_source.read_bytes())
+            self.assertEqual(mobile_copy.read_bytes(), mobile_source.read_bytes())
+            self.assertEqual(self.run_cli("validate", "--run-dir", str(run_dir))["status"], "PASS")
+
+            before = report_path.read_bytes()
+            repeated = subprocess.run(
+                [
+                    "python3",
+                    str(CLI),
+                    "bind-browser-evidence",
+                    "--run-dir",
+                    str(run_dir),
+                    "--observation",
+                    str(draft_path),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(repeated.returncode, 2)
+            self.assertIn("already exists", repeated.stderr)
+            self.assertEqual(report_path.read_bytes(), before)
+
+    def test_bind_browser_evidence_rejects_invalid_or_mismatched_samples_atomically(self) -> None:
+        cases = (
+            ("hidden", {"desktop_visibility": "hidden"}, (1440, 900), "INVALID SAMPLE"),
+            ("network", {"network_sha256": "0" * 64}, (1440, 900), "do not match"),
+            ("viewport", {}, (1439, 900), "PNG dimensions"),
+        )
+        for name, draft_options, desktop_size, expected_error in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                run_dir = Path(directory)
+                fixture = self.create_valid_run(run_dir)
+                for path in (
+                    run_dir / "evidence" / "browser-runtime.json",
+                    run_dir / "evidence" / "browser-desktop.png",
+                    run_dir / "evidence" / "browser-mobile.png",
+                ):
+                    path.unlink()
+                desktop_source = run_dir / "source" / "browser67-desktop.png"
+                mobile_source = run_dir / "source" / "browser67-mobile.png"
+                self.write_png_header(desktop_source, *desktop_size)
+                self.write_png_header(mobile_source, 390, 1269)
+                draft_path = run_dir / "source" / "browser-observation.json"
+                self.write_json(
+                    draft_path,
+                    self.browser_draft(
+                        glb=fixture["glb"],
+                        desktop=desktop_source,
+                        mobile=mobile_source,
+                        **draft_options,
+                    ),
+                )
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(CLI),
+                        "bind-browser-evidence",
+                        "--run-dir",
+                        str(run_dir),
+                        "--observation",
+                        str(draft_path),
+                        "--json",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected_error, result.stderr)
+                self.assertFalse((run_dir / "evidence" / "browser-runtime.json").exists())
+                self.assertFalse((run_dir / "evidence" / "browser-desktop.png").exists())
+                self.assertFalse((run_dir / "evidence" / "browser-mobile.png").exists())
+
+    def test_bind_browser_evidence_preserves_an_honest_capture_blocker_without_fake_pngs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            fixture = self.create_valid_run(run_dir)
+            for path in (
+                run_dir / "evidence" / "browser-runtime.json",
+                run_dir / "evidence" / "browser-desktop.png",
+                run_dir / "evidence" / "browser-mobile.png",
+            ):
+                path.unlink()
+            draft = self.browser_draft(
+                glb=fixture["glb"],
+                desktop=run_dir / "unused-desktop.png",
+                mobile=run_dir / "unused-mobile.png",
+            )
+            draft["status"] = "BLOCKED"
+            draft["page_status"] = "ready"
+            draft["blocker"] = "browser.capture timed out"
+            draft.pop("desktop_screenshot")
+            draft.pop("mobile_screenshot")
+            draft_path = run_dir / "source" / "browser-observation.json"
+            self.write_json(draft_path, draft)
+
+            payload = self.run_cli(
+                "bind-browser-evidence",
+                "--run-dir",
+                str(run_dir),
+                "--observation",
+                str(draft_path),
+            )
+            self.assertEqual(payload["screenshots"], [])
+            report = json.loads((run_dir / "evidence" / "browser-runtime.json").read_text())
+            self.assertNotIn("desktop_screenshot", report)
+            validation = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+            by_gate = {item["id"]: item["status"] for item in validation["gates"]}
+            self.assertEqual(by_gate["cross_runtime"], "BLOCKED")
+            self.assertEqual(by_gate["web_runtime"], "BLOCKED")
+            self.assertEqual(by_gate["delivery"], "BLOCKED")
 
     def test_browser_blocker_propagates_without_becoming_a_page_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

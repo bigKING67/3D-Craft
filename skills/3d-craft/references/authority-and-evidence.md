@@ -47,6 +47,8 @@ directory only when the user chose it. Do not place screenshots, render frames,
 or Blender backup files beside source code.
 
 Evidence producers and `bind-asset` refuse to overwrite their owned outputs.
+`bind-browser-evidence` applies the same rule while copying reviewed browser67
+PNG bytes into run-owned evidence and deriving their hashes and dimensions.
 Create a new run whenever candidate bytes, the scene contract, or an assessment
 changes; do not add a force flag that erases prior provenance.
 

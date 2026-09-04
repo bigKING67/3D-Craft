@@ -18,5 +18,8 @@ contract without manually transcribing hashes.
 
 For rendered or assured validation, run `init-visual-review`, inspect all fixed
 views, and complete its initially `UNVERIFIED` feature assessments. Accepted
-browser67 screenshots must be copied into the run's `evidence/` directory; a
+browser67 observations must use the `3d-craft.browser-runtime-draft.v1` shape
+documented in `skills/3d-craft/references/web3d-runtime-qa.md`. Run
+`bind-browser-evidence` to verify the served GLB identity and PNG viewport,
+copy accepted screenshots into `evidence/`, and create the sealed report. A
 path into browser67's runtime cache is provenance, not a portable deliverable.
