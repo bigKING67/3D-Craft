@@ -87,7 +87,18 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
     network: { status: 'PASS', bytes: 3, sha256: hash },
     raf: { delta: 10 },
     metrics: { draw_calls: 1, textures: 0, frame_p95_ms: 8 },
-    lifecycle: { remount_test_status: 'PASS', ready_after_clean_reload: true },
+    lifecycle: {
+      remount_test_status: 'PASS',
+      ready_after_clean_reload: true,
+      context_loss: {
+        test_status: 'PASS',
+        supported: true,
+        losses: 1,
+        restores: 1,
+        ready_after_restore: true,
+        raf_resumed_after_restore: true,
+      },
+    },
     cross_runtime: { required_node_coverage_percent: 100, bbox_drift_percent: 0.1 },
     desktop_screenshot: { path: '/tmp/desktop.png', sha256: hash, bytes: 1, visual_review: 'PASS' },
     responsive_layout: { status: 'PASS', horizontal_overflow: false },
@@ -96,6 +107,9 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
   }
   const validateBrowser = ajv.getSchema('https://3d-craft.local/schemas/browser-runtime.v1.schema.json')
   assert.equal(validateBrowser(browser), true, JSON.stringify(validateBrowser.errors))
+  const contradictoryContextRecovery = structuredClone(browser)
+  contradictoryContextRecovery.lifecycle.context_loss.restores = 0
+  assert.equal(validateBrowser(contradictoryContextRecovery), false)
   browser.runtime = 'generic-browser'
   assert.equal(validateBrowser(browser), false)
   const blockedBrowser = structuredClone(browser)
@@ -114,7 +128,18 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
     network: { status: 'PASS', bytes: 3, sha256: hash },
     raf: { delta: 10 },
     metrics: { draw_calls: 1, textures: 0, frame_p95_ms: 8 },
-    lifecycle: { remount_test_status: 'PASS', ready_after_clean_reload: true },
+    lifecycle: {
+      remount_test_status: 'PASS',
+      ready_after_clean_reload: true,
+      context_loss: {
+        test_status: 'PASS',
+        supported: true,
+        losses: 1,
+        restores: 1,
+        ready_after_restore: true,
+        raf_resumed_after_restore: true,
+      },
+    },
     cross_runtime: { required_node_coverage_percent: 100, bbox_drift_percent: 0.1 },
     desktop_screenshot: {
       source_path: '/tmp/browser67-desktop.png',
@@ -169,10 +194,18 @@ test('viewer pins the validated R3F stack, splits dependency chunks, and keeps o
   assert.match(assetScene, /loadedRoot = displayRoot\s+noteMount\(\)/)
   assert.match(assetScene, /nodeNames: Object\.freeze/)
   assert.match(assetScene, /materialNames: Object\.freeze/)
+  assert.match(assetScene, /webglcontextlost/)
+  assert.match(assetScene, /webglcontextrestored/)
+  assert.match(assetScene, /3d-craft:test-context-loss/)
+  assert.match(assetScene, /queueMicrotask/)
+  assert.match(assetScene, /enabled=\{status === 'ready'\}/)
+  assert.match(observability, /status: 'idle' \| 'running'/)
+  assert.match(observability, /test_supported/)
   assert.match(app, /motion.*reduce/)
   assert.match(app, /forcedReducedMotion \|\| media\.matches/)
   assert.match(app, /import\('\.\/AssetScene'\)/)
   assert.match(app, /The 3D runtime could not be loaded/)
+  assert.match(app, /status === 'error' && error/)
   assert.match(viteConfig, /chunkSizeWarningLimit: 800/)
   for (const chunk of ['react-runtime', 'three-runtime', 'r3f-runtime', 'vendor']) {
     assert.match(viteConfig, new RegExp(`name: '${chunk}'`))
@@ -181,4 +214,5 @@ test('viewer pins the validated R3F stack, splits dependency chunks, and keeps o
   assert.match(runtimeQa, /visibilityState.*remains `hidden`/)
   assert.match(runtimeQa, /`INVALID SAMPLE`/)
   assert.match(runtimeQa, /absence in production is expected/)
+  assert.match(runtimeQa, /Context-loss evidence/)
 })

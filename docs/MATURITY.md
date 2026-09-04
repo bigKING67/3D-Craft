@@ -94,6 +94,41 @@ not by itself extend the immutable release provenance of commit
 only when a later external release attestation names an exact clean commit;
 this narrative does not self-certify that transition.
 
+## V0.2 working-tree slice: WebGL context recovery
+
+On 2026-09-04, the first V0.2 slice added a real WebGL context-loss lifecycle to
+the bundled R3F viewer. Asset loading state and GPU context state are separate,
+so an asynchronous GLB callback cannot overwrite `context-lost` with a false
+`ready`. Camera controls pause during interruption, the UI exposes authored
+`context-lost` and `restoring` states, Three.js performs its native renderer
+reset, and a background-safe microtask returns the application to its asset
+state without waiting on a throttled browser RAF.
+
+The browser-runtime v1 receipt accepts an optional strict `context_loss`
+observation. Existing V0.1 receipts remain valid; a supplied `PASS` must prove
+extension support, at least one loss and restore, visible readiness, and fresh
+RAF progress after restoration, while a supplied `FAIL` prevents the
+`web_runtime` gate from passing.
+
+Live browser67 0.11.2 evidence used the coffee-grinder GLB at SHA-256
+`120e6ab9e2ef56a06cb9d01a92a2b77c179c2513f0db03a6d6e976660225bf8d`.
+The exact current working tree observed one loss and one restore, returned to
+`healthy + ready`, advanced 57 frames after restoration, preserved 15 objects,
+13 meshes, 5 materials, and 10,118 triangles, then passed a remount/dispose
+check with 2 mounts, 1 remount, and 1 disposal. Two 1440x900 samples were
+accepted only with `visibilityState=visible`; two hidden intermediate captures
+were retained as `INVALID SAMPLE`, not promoted to visual evidence. A separate
+background test kept the target at `visibilityState=hidden` with its RAF counter
+fixed at 303 before, during, and after the cycle; the snapshot still returned
+from `context-lost` to `ready` with a healthy context. The durable local receipt
+is outside the repository at
+`~/Library/Application Support/3d-craft/runs/v02-context-loss-20260904/context-loss-observation.json`
+(SHA-256 `911af2c2a0e80ab0caeded4d52072dc24e4435f68ff584e8fcebd4136802ef24`).
+
+This is uncommitted local working-tree evidence for one slice. It is not a
+clean-commit release attestation, packaged-host proof, remote CI result, or a
+claim that all of V0.2 is complete.
+
 ## Not yet established
 
 - remote CI results for the candidate commit;

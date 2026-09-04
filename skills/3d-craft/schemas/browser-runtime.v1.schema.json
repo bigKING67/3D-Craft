@@ -97,6 +97,40 @@
       "properties": {
         "remount_test_status": {"enum": ["PASS", "FAIL", "UNVERIFIED"]},
         "ready_after_clean_reload": {"type": "boolean"},
+        "context_loss": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "test_status",
+            "supported",
+            "losses",
+            "restores",
+            "ready_after_restore",
+            "raf_resumed_after_restore"
+          ],
+          "properties": {
+            "test_status": {"enum": ["PASS", "FAIL", "UNVERIFIED"]},
+            "supported": {"type": "boolean"},
+            "losses": {"type": "integer", "minimum": 0},
+            "restores": {"type": "integer", "minimum": 0},
+            "ready_after_restore": {"type": "boolean"},
+            "raf_resumed_after_restore": {"type": "boolean"}
+          },
+          "allOf": [
+            {
+              "if": {"properties": {"test_status": {"const": "PASS"}}, "required": ["test_status"]},
+              "then": {
+                "properties": {
+                  "supported": {"const": true},
+                  "losses": {"type": "integer", "minimum": 1},
+                  "restores": {"type": "integer", "minimum": 1},
+                  "ready_after_restore": {"const": true},
+                  "raf_resumed_after_restore": {"const": true}
+                }
+              }
+            }
+          ]
+        },
         "observed_before_clean_reload": {
           "type": "object",
           "additionalProperties": false,

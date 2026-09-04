@@ -70,7 +70,18 @@ class ThreeDCraftCliTests(unittest.TestCase):
             },
             "raf": {"delta": 10},
             "metrics": {"draw_calls": 1, "textures": 0, "frame_p95_ms": 8},
-            "lifecycle": {"remount_test_status": "PASS", "ready_after_clean_reload": True},
+            "lifecycle": {
+                "remount_test_status": "PASS",
+                "ready_after_clean_reload": True,
+                "context_loss": {
+                    "test_status": "PASS",
+                    "supported": True,
+                    "losses": 1,
+                    "restores": 1,
+                    "ready_after_restore": True,
+                    "raf_resumed_after_restore": True,
+                },
+            },
             "cross_runtime": {"required_node_coverage_percent": 100, "bbox_drift_percent": 0.1},
             "desktop_screenshot": {
                 "source_path": str(desktop),
@@ -313,7 +324,18 @@ class ThreeDCraftCliTests(unittest.TestCase):
                     "network": {"status": "PASS", "bytes": glb_entry["bytes"], "sha256": glb_entry["sha256"]},
                     "raf": {"delta": 10},
                     "metrics": {"draw_calls": 1, "textures": 0, "frame_p95_ms": 8},
-                    "lifecycle": {"remount_test_status": "PASS", "ready_after_clean_reload": True},
+                    "lifecycle": {
+                        "remount_test_status": "PASS",
+                        "ready_after_clean_reload": True,
+                        "context_loss": {
+                            "test_status": "PASS",
+                            "supported": True,
+                            "losses": 1,
+                            "restores": 1,
+                            "ready_after_restore": True,
+                            "raf_resumed_after_restore": True,
+                        },
+                    },
                     "cross_runtime": {"required_node_coverage_percent": 100, "bbox_drift_percent": 0.1},
                     "desktop_screenshot": desktop,
                     "responsive_layout": {"status": "PASS", "horizontal_overflow": False},
@@ -620,6 +642,7 @@ class ThreeDCraftCliTests(unittest.TestCase):
             self.assertEqual(report["desktop_screenshot"]["dimensions"], [1440, 900])
             self.assertEqual(report["mobile_screenshot"]["dimensions"], [390, 1269])
             self.assertEqual(report["desktop_screenshot"]["path"], str(desktop_copy.resolve()))
+            self.assertEqual(report["lifecycle"]["context_loss"]["test_status"], "PASS")
             self.assertEqual(desktop_copy.read_bytes(), desktop_source.read_bytes())
             self.assertEqual(mobile_copy.read_bytes(), mobile_source.read_bytes())
             self.assertEqual(self.run_cli("validate", "--run-dir", str(run_dir))["status"], "PASS")
@@ -747,6 +770,37 @@ class ThreeDCraftCliTests(unittest.TestCase):
             self.assertEqual(by_gate["cross_runtime"], "BLOCKED")
             self.assertEqual(by_gate["web_runtime"], "BLOCKED")
             self.assertEqual(by_gate["delivery"], "BLOCKED")
+
+    def test_context_loss_failure_prevents_web_runtime_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            self.create_valid_run(run_dir)
+            report_path = run_dir / "evidence" / "browser-runtime.json"
+            report = json.loads(report_path.read_text())
+            report["lifecycle"]["context_loss"] = {
+                "test_status": "FAIL",
+                "supported": True,
+                "losses": 1,
+                "restores": 0,
+                "ready_after_restore": False,
+                "raf_resumed_after_restore": False,
+            }
+            self.write_json(report_path, report)
+            payload = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+            by_gate = {item["id"]: item["status"] for item in payload["gates"]}
+            self.assertEqual(by_gate["web_runtime"], "FAIL")
+
+    def test_context_loss_pass_requires_observed_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            self.create_valid_run(run_dir)
+            report_path = run_dir / "evidence" / "browser-runtime.json"
+            report = json.loads(report_path.read_text())
+            report["lifecycle"]["context_loss"]["restores"] = 0
+            self.write_json(report_path, report)
+            payload = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+            by_gate = {item["id"]: item["status"] for item in payload["gates"]}
+            self.assertEqual(by_gate["web_runtime"], "FAIL")
 
     def test_gltf_gate_fails_when_report_targets_another_asset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

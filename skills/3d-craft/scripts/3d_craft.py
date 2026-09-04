@@ -952,12 +952,46 @@ def browser_runtime_errors(browser: Any) -> list[str]:
     lifecycle = browser.get("lifecycle")
     if not exact_keys(
         lifecycle,
-        {"remount_test_status", "ready_after_clean_reload", "observed_before_clean_reload"},
+        {"remount_test_status", "ready_after_clean_reload", "context_loss", "observed_before_clean_reload"},
         {"remount_test_status", "ready_after_clean_reload"},
     ) or as_object(lifecycle).get("remount_test_status") not in {"PASS", "FAIL", "UNVERIFIED"} or not isinstance(
         as_object(lifecycle).get("ready_after_clean_reload"), bool
     ):
         errors.append("browser lifecycle observation is malformed")
+    context_loss = as_object(lifecycle).get("context_loss")
+    if context_loss is not None:
+        context_keys = {
+            "test_status",
+            "supported",
+            "losses",
+            "restores",
+            "ready_after_restore",
+            "raf_resumed_after_restore",
+        }
+        context = as_object(context_loss)
+        context_valid = bool(
+            exact_keys(context_loss, context_keys, context_keys)
+            and context.get("test_status") in {"PASS", "FAIL", "UNVERIFIED"}
+            and isinstance(context.get("supported"), bool)
+            and all(
+                isinstance(context.get(name), int)
+                and not isinstance(context.get(name), bool)
+                and context[name] >= 0
+                for name in ("losses", "restores")
+            )
+            and isinstance(context.get("ready_after_restore"), bool)
+            and isinstance(context.get("raf_resumed_after_restore"), bool)
+        )
+        if context_valid and context.get("test_status") == "PASS":
+            context_valid = bool(
+                context.get("supported") is True
+                and context.get("losses", 0) >= 1
+                and context.get("restores", 0) >= 1
+                and context.get("ready_after_restore") is True
+                and context.get("raf_resumed_after_restore") is True
+            )
+        if not context_valid:
+            errors.append("browser context-loss observation is malformed or contradicts a PASS verdict")
     cross_runtime = browser.get("cross_runtime")
     cross_keys = {"required_node_coverage_percent", "bbox_drift_percent"}
     if not exact_keys(cross_runtime, cross_keys | {"note"}, cross_keys) or any(
@@ -1757,6 +1791,8 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         web_metrics = as_object((browser or {}).get("metrics"))
         web_budgets = approved_budgets(scene, ("draw_calls", "textures", "frame_p95_ms"))
         lifecycle = as_object((browser or {}).get("lifecycle"))
+        context_loss = as_object(lifecycle.get("context_loss"))
+        context_loss_failed = context_loss.get("test_status") == "FAIL"
         target_devices_value = as_object(scene_object.get("runtime")).get("target_devices")
         target_devices = target_devices_value if isinstance(target_devices_value, list) else []
         mobile_required = "mobile" in target_devices
@@ -1793,6 +1829,7 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             and as_object(browser.get("raf")).get("delta") > 0
             and lifecycle.get("remount_test_status") == "PASS"
             and lifecycle.get("ready_after_clean_reload") is True
+            and not context_loss_failed
             and mobile_ok
         )
         draw_calls = web_metrics.get("draw_calls")
@@ -1818,6 +1855,8 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         else:
             web_status = "FAIL"
         web_note = "browser67 runtime, lifecycle, responsive evidence, and approved desktop budgets passed."
+        if web_status == "PASS" and context_loss.get("test_status") == "PASS":
+            web_note = "browser67 runtime, context-loss recovery, lifecycle, responsive evidence, and approved desktop budgets passed."
         if web_status == "BLOCKED":
             web_note = f"Browser evidence is blocked: {browser.get('blocker', 'unspecified prerequisite')}."
         elif web_status != "PASS":

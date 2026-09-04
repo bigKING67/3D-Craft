@@ -15,7 +15,8 @@ its runtime status without competing with the model.
   help as readable instrumentation rather than a dashboard wall.
 - Desktop is a two-region composition: a narrow evidence rail and a large
   canvas. Mobile stacks the summary above a viewport that remains useful.
-- Loading, ready, and error are first-class authored states.
+- Loading, ready, interrupted, restoring, and error are first-class authored
+  states. A lost GPU context must never leave the interface claiming `ready`.
 
 ## Typography
 
@@ -40,8 +41,10 @@ its runtime status without competing with the model.
 
 - Evidence rail: title, concise brief, lifecycle status, and metric rows.
 - Canvas viewport: the asset, a subtle floor grid, and a reset-camera control.
-- Status label: always pairs color with readable `loading`, `ready`, or `error`
-  copy.
+- Status label: always pairs color with readable `loading`, `ready`,
+  `context-lost`, `restoring`, or `error` copy.
+- Recovery notice: uses the existing safety-orange role, pauses camera controls,
+  and remains visually secondary to the asset when rendering is healthy.
 - Diagnostic notice: displays the asset URL and observable error without
   covering the entire viewport.
 

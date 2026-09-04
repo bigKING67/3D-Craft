@@ -41,6 +41,9 @@ coverage from counts alone. A stale screenshot or DOM/3D disagreement is
 - orbit, zoom, and reset-camera work;
 - resize does not create a canvas loop or overflow;
 - remount/unmount increments lifecycle counters and disposes owned resources;
+- context loss changes the visible state away from `ready`, pauses camera
+  controls, restores the renderer, shows fresh RAF progress afterward, and
+  preserves scene identity;
 - reduced motion removes nonessential automatic drift;
 - desktop 1440x900 and mobile 390x844 layout are usable;
 - desktop warmup/sample performance meets the approved fixture budget.
@@ -67,9 +70,21 @@ not substitute a stale or unreviewed screenshot; validation propagates the
 blocked state to browser gates while retaining evidence-backed capabilities.
 
 The bundled development viewer accepts a `3d-craft:test-remount` DOM event for
-test orchestration. This event and the browser-exposed observability snapshot
-are registered only in Vite development or test mode; the snapshot remains
-frozen and read-only when present. Its absence in production is expected.
+test orchestration. It also accepts `3d-craft:test-context-loss` and
+`3d-craft:test-context-restore`; these call Three.js's real
+`WEBGL_lose_context` path rather than simulating a CSS-only state. These events
+and the browser-exposed observability snapshot are registered only in Vite
+development or test mode; the snapshot remains frozen and read-only when
+present. Its absence in production is expected.
+
+Context-loss evidence is a forward-compatible V0.2 extension of the v1 browser
+receipt. It remains optional for V0.1 receipts. When present, a `PASS` requires
+extension support, at least one observed loss and restore, a return to visible
+`ready`, and new RAF progress after restoration. A reported `FAIL` blocks the
+`web_runtime` gate; do not omit a failed observation to manufacture a pass.
+R3F may continue scheduling JavaScript RAF callbacks while the WebGL context is
+lost, so `lifecycle.context.status` is the interruption authority; do not claim
+the browser RAF itself stopped unless a separate observation proves it.
 Use the viewer's `?motion=reduce` query for deterministic screenshots and
 verify the visible `Reduced motion` label before accepting the sample.
 
@@ -106,7 +121,15 @@ dimensions: the command derives those facts. A minimal ready draft is:
   "metrics": {"draw_calls": 12, "textures": 2, "frame_p95_ms": 14.5},
   "lifecycle": {
     "remount_test_status": "PASS",
-    "ready_after_clean_reload": true
+    "ready_after_clean_reload": true,
+    "context_loss": {
+      "test_status": "PASS",
+      "supported": true,
+      "losses": 1,
+      "restores": 1,
+      "ready_after_restore": true,
+      "raf_resumed_after_restore": true
+    }
   },
   "cross_runtime": {
     "required_node_coverage_percent": 100,

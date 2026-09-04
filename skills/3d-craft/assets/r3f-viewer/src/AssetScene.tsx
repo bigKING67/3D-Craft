@@ -18,9 +18,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import {
   currentSnapshot,
+  noteContextHealthy,
+  noteContextLost,
+  noteContextRestoring,
+  noteContextTestSupport,
   noteDispose,
   noteMount,
   publishSnapshot,
+  type ContextStatus,
   type ViewerStatus,
 } from './observability'
 
@@ -40,6 +45,8 @@ interface AssetSceneProps {
   onStatus: (status: ViewerStatus, detail?: string) => void
   onFacts: (facts: SceneFacts) => void
 }
+
+type AssetStatus = Extract<ViewerStatus, 'loading' | 'ready' | 'error'>
 
 const DISPLAY_MAX_DIMENSION_METERS = 0.32
 const CAMERA_TARGET = new Vector3(0, 0.15, 0)
@@ -99,7 +106,11 @@ function disposeObject(root: Object3D): void {
   noteDispose()
 }
 
-function LoadedAsset({ assetUrl, onStatus, onFacts }: Pick<AssetSceneProps, 'assetUrl' | 'onStatus' | 'onFacts'>) {
+function LoadedAsset({ assetUrl, onStatus, onFacts }: {
+  assetUrl: string
+  onStatus: (status: AssetStatus, detail?: string) => void
+  onFacts: (facts: SceneFacts) => void
+}) {
   const [root, setRoot] = useState<Group | null>(null)
 
   useEffect(() => {
@@ -173,6 +184,59 @@ function LoadedAsset({ assetUrl, onStatus, onFacts }: Pick<AssetSceneProps, 'ass
   return root ? <primitive object={root} /> : null
 }
 
+function ContextLifecycle({ onStatus, resumedStatus }: {
+  onStatus: (status: ContextStatus) => void
+  resumedStatus: AssetStatus
+}) {
+  const { gl, invalidate } = useThree()
+
+  useEffect(() => {
+    const canvas = gl.domElement
+    const context = gl.getContext()
+    const testSupported = Boolean(context.getExtension('WEBGL_lose_context'))
+    let restoreGeneration = 0
+    noteContextTestSupport(testSupported)
+
+    const handleLost = (event: Event) => {
+      event.preventDefault()
+      restoreGeneration += 1
+      noteContextLost()
+      onStatus('lost')
+    }
+    const handleRestored = () => {
+      const generation = ++restoreGeneration
+      noteContextRestoring()
+      onStatus('restoring')
+      // Three registers its restore listener before this component. A microtask
+      // observes that completed reset without depending on background-throttled RAF.
+      queueMicrotask(() => {
+        if (generation !== restoreGeneration || context.isContextLost()) return
+        invalidate()
+        noteContextHealthy(resumedStatus)
+        onStatus('healthy')
+      })
+    }
+    const forceLoss = () => gl.forceContextLoss()
+    const forceRestore = () => gl.forceContextRestore()
+
+    canvas.addEventListener('webglcontextlost', handleLost)
+    canvas.addEventListener('webglcontextrestored', handleRestored)
+    if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+      window.addEventListener('3d-craft:test-context-loss', forceLoss)
+      window.addEventListener('3d-craft:test-context-restore', forceRestore)
+    }
+    return () => {
+      restoreGeneration += 1
+      canvas.removeEventListener('webglcontextlost', handleLost)
+      canvas.removeEventListener('webglcontextrestored', handleRestored)
+      window.removeEventListener('3d-craft:test-context-loss', forceLoss)
+      window.removeEventListener('3d-craft:test-context-restore', forceRestore)
+    }
+  }, [gl, invalidate, onStatus, resumedStatus])
+
+  return null
+}
+
 function RuntimeProbe({ assetUrl, assetSha256, facts, status, error }: {
   assetUrl: string
   assetSha256: string
@@ -230,20 +294,34 @@ function RuntimeProbe({ assetUrl, assetSha256, facts, status, error }: {
 
 export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onFacts }: AssetSceneProps) {
   const controls = useRef<OrbitControlsImpl>(null)
-  const [status, setStatus] = useState<ViewerStatus>('loading')
+  const [assetStatus, setAssetStatus] = useState<AssetStatus>('loading')
+  const [contextStatus, setContextStatus] = useState<ContextStatus>('healthy')
   const [error, setError] = useState('')
   const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0], nodeNames: [], materialNames: [] })
   const callbacks = useMemo(() => ({
-    status: (next: ViewerStatus, detail = '') => {
-      setStatus(next)
+    status: (next: AssetStatus, detail = '') => {
+      setAssetStatus(next)
       setError(detail)
-      onStatus(next, detail)
     },
     facts: (next: SceneFacts) => {
       setFacts(next)
       onFacts(next)
     },
-  }), [onFacts, onStatus])
+  }), [onFacts])
+  const status: ViewerStatus = contextStatus === 'lost'
+    ? 'context-lost'
+    : contextStatus === 'restoring'
+      ? 'restoring'
+      : assetStatus
+
+  useEffect(() => {
+    const detail = status === 'context-lost'
+      ? 'The WebGL context was interrupted. Interaction is paused until the GPU context is restored.'
+      : status === 'restoring'
+        ? 'The WebGL context returned. Rebuilding renderer resources and resuming the scene…'
+        : error
+    onStatus(status, detail)
+  }, [error, onStatus, status])
 
   return (
     <Canvas
@@ -256,6 +334,7 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
         return renderer
       }}
     >
+      <ContextLifecycle onStatus={setContextStatus} resumedStatus={assetStatus} />
       <ResponsiveCamera controls={controls} />
       <ambientLight intensity={1.25} />
       <directionalLight position={[1.8, 2.4, 1.2]} intensity={3.2} />
@@ -271,6 +350,7 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
       <OrbitControls
         ref={controls}
         makeDefault
+        enabled={status === 'ready'}
         enableDamping={!reducedMotion}
         dampingFactor={0.07}
         autoRotate={!reducedMotion && status === 'ready'}

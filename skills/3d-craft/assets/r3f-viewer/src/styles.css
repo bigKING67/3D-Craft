@@ -86,6 +86,8 @@ h1 {
 }
 .status-chip span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .status-ready { color: var(--success); }
+.status-context-lost,
+.status-restoring { color: var(--accent); }
 .status-error { color: var(--danger); }
 .error-copy { display: block; margin-top: 12px; color: var(--danger); overflow-wrap: anywhere; font-size: 0.75rem; }
 
@@ -116,6 +118,22 @@ h1 {
 .reset-camera:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .reset-camera:disabled { opacity: 0.42; cursor: wait; }
 .interaction-hint { position: absolute; left: 18px; bottom: 12px; margin: 0; color: var(--muted); font: 0.72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.context-notice {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  min-width: min(340px, calc(100% - 36px));
+  padding: 16px 18px;
+  display: grid;
+  gap: 6px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--ink);
+  background: rgba(246, 244, 238, 0.96);
+}
+.context-notice strong { font-size: 0.9rem; font-weight: 650; }
+.context-notice span { color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
 .loading-mark { position: absolute; inset: 50% auto auto 50%; width: 34px; height: 34px; margin: -17px; border: 1px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: turn 900ms linear infinite; }
 @keyframes turn { to { transform: rotate(360deg); } }
 

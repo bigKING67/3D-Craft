@@ -87,9 +87,11 @@ export default function App() {
           <p>
             {status === 'loading' && 'Loading and inspecting asset.glb…'}
             {status === 'ready' && 'Asset loaded. Orbit, zoom, or reset the camera.'}
+            {status === 'context-lost' && 'GPU context interrupted. Interaction is paused while the canvas waits to recover.'}
+            {status === 'restoring' && 'GPU context restored. Rebuilding renderer resources and checking scene readiness…'}
             {status === 'error' && 'The GLB could not be displayed. Check the asset URL and console evidence.'}
           </p>
-          {error && <code className="error-copy">{error}</code>}
+          {status === 'error' && error && <code className="error-copy">{error}</code>}
         </section>
 
         <dl className="metric-list">
@@ -124,6 +126,12 @@ export default function App() {
             />
           )}
           {status === 'loading' && <div className="loading-mark" aria-hidden="true" />}
+          {(status === 'context-lost' || status === 'restoring') && (
+            <div className="context-notice" aria-hidden="true">
+              <strong>{status === 'context-lost' ? 'Rendering interrupted' : 'Restoring 3D scene'}</strong>
+              <span>{status === 'context-lost' ? 'Camera controls are paused.' : 'Controls resume after a healthy frame.'}</span>
+            </div>
+          )}
           <button className="reset-camera" type="button" onClick={resetCamera} disabled={status !== 'ready'}>
             Reset camera
           </button>

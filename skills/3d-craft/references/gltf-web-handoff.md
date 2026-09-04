@@ -31,8 +31,10 @@ Configure Draco, KTX2, or Meshopt decoders only when the asset actually uses
 them. Treat exporter compression and loader support as one contract. Own
 loading, error, camera framing, resize, tone mapping, color space, shadows,
 interaction, and resource disposal. Record context-loss recovery as
-`UNVERIFIED` in V0.1; automated recovery belongs to V0.2. Revalidate after every
-optimization and compare visual evidence before accepting size gains.
+`UNVERIFIED` in a V0.1-only receipt. The bundled viewer now contains the first
+V0.2 recovery slice and can bind an optional, strict `context_loss` observation;
+this does not make the rest of the V0.2 roadmap complete. Revalidate after
+every optimization and compare visual evidence before accepting size gains.
 
 Keep viewer npm dependencies and generated assets out of the installed Skill;
 the audited validator runtime above is the only V0.1 exception. Copy the viewer
