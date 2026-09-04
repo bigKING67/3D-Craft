@@ -1,6 +1,6 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   Box3,
   Color,
@@ -42,6 +42,37 @@ interface AssetSceneProps {
 }
 
 const DISPLAY_MAX_DIMENSION_METERS = 0.32
+const CAMERA_TARGET = new Vector3(0, 0.15, 0)
+const CAMERA_POSITION = new Vector3(0.48, 0.34, 0.56)
+const COMPACT_CAMERA_ASPECT = 0.8
+const COMPACT_CAMERA_DISTANCE_SCALE = 1.65
+
+function ResponsiveCamera({ controls }: { controls: RefObject<OrbitControlsImpl | null> }) {
+  const { camera, size } = useThree()
+  const compact = size.width / Math.max(size.height, 1) < COMPACT_CAMERA_ASPECT
+
+  const resetCamera = useCallback(() => {
+    const distanceScale = compact ? COMPACT_CAMERA_DISTANCE_SCALE : 1
+    camera.position
+      .copy(CAMERA_POSITION)
+      .sub(CAMERA_TARGET)
+      .multiplyScalar(distanceScale)
+      .add(CAMERA_TARGET)
+    camera.lookAt(CAMERA_TARGET)
+    camera.updateMatrixWorld()
+    controls.current?.target.copy(CAMERA_TARGET)
+    controls.current?.update()
+  }, [camera, compact, controls])
+
+  useEffect(() => resetCamera(), [resetCamera])
+
+  useEffect(() => {
+    window.addEventListener('3d-craft:reset-camera', resetCamera)
+    return () => window.removeEventListener('3d-craft:reset-camera', resetCamera)
+  }, [resetCamera])
+
+  return null
+}
 
 function disposeObject(root: Object3D): void {
   const disposedMaterials = new Set<Material>()
@@ -214,12 +245,6 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
     },
   }), [onFacts, onStatus])
 
-  useEffect(() => {
-    const reset = () => controls.current?.reset()
-    window.addEventListener('3d-craft:reset-camera', reset)
-    return () => window.removeEventListener('3d-craft:reset-camera', reset)
-  }, [])
-
   return (
     <Canvas
       dpr={[1, 2]}
@@ -231,6 +256,7 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
         return renderer
       }}
     >
+      <ResponsiveCamera controls={controls} />
       <ambientLight intensity={1.25} />
       <directionalLight position={[1.8, 2.4, 1.2]} intensity={3.2} />
       <directionalLight position={[-1.2, 0.8, -1.4]} intensity={1.1} />

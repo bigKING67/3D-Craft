@@ -30,6 +30,12 @@ validation. Local acceptance has exercised:
 - production browser readiness after a verified 1280x720 viewport transaction,
   including GLB HTTP success, populated 15-object/13-mesh/5-material metrics,
   expected 188x224x320 mm dimensions, and a live WebGL context;
+- visible browser67 visual evidence from the current Viewer tree: the final
+  1280x720 desktop sample has no page overflow and keeps the complete evidence
+  rail and asset in frame, while the final 390px-wide full-page sample keeps
+  the complete asset in the responsive Canvas. Both captures verified
+  `visibilityState=visible`, exact requested viewport metrics, PNG dimensions,
+  and automatic viewport-override cleanup;
 - separate Skill discovery and invocation smokes for Codex, Pi, and Grok.
 
 These checks establish a local candidate, not a published release. Evidence is
@@ -44,12 +50,6 @@ browser runtime, and artifacts recorded by the corresponding receipt.
 - global user installation parity;
 - Windows or Linux host acceptance;
 - physical mobile-device GPU frame timing;
-- current-tree assured browser screenshots: browser67 now returns hash-bound
-  1280x720 PNG artifacts and verifies the temporary viewport, but the managed
-  page remains `visibilityState=hidden` even after bounded foreground attempts.
-  Those captures are `INVALID SAMPLE`; desktop/mobile visual acceptance and
-  responsive-layout gates remain `BLOCKED` rather than being credited from a
-  potentially stale compositor image;
 - physical target-device evidence for the new Viewer split, including cold-load
   paint timing, cache reuse, and mobile GPU frame timing. Current bundle and
   browser observations prove the dependency boundary and semantic readiness,
