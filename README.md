@@ -61,6 +61,22 @@ Host discovery and model invocation are separate acceptance boundaries. See
 `docs/HOST_COMPATIBILITY.md` for scoped Codex, Pi, and Grok smoke commands,
 host-runtime boundaries, and the evidence required before claiming support.
 
+After an authorized global installation, verify credential-free discovery from
+a real target workspace without invoking a model:
+
+```bash
+receipt_dir="$(mktemp -d /tmp/3d-craft-host-discovery.XXXXXX)"
+python3 scripts/host_discovery.py \
+  --skill-root "$HOME/.agents/skills/3d-craft" \
+  --workspace /absolute/path/to/target-project \
+  --output "$receipt_dir/host-discovery.json" \
+  --json
+```
+
+The receipt binds Codex prompt-input, Pi offline RPC, and Grok inspect results
+to the exact installed Skill tree. It neither invokes a model nor requests or
+changes credentials and provider configuration.
+
 ## Reproducible candidate package
 
 Build a deterministic ZIP twice, compare SHA-256, validate an independently

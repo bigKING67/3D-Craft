@@ -20,6 +20,32 @@ troubleshoot the host separately. A model response does not prove that the
 candidate Skill was the source unless discovery or expanded-prompt evidence
 identifies its exact path.
 
+## Deterministic discovery receipt
+
+Use the repository development tool to verify all three hosts without running
+a model:
+
+```bash
+receipt_dir="$(mktemp -d /tmp/3d-craft-host-discovery.XXXXXX)"
+python3 scripts/host_discovery.py \
+  --skill-root "$HOME/.agents/skills/3d-craft" \
+  --workspace /absolute/path/to/target-project \
+  --output "$receipt_dir/host-discovery.json" \
+  --json
+```
+
+The command checks only these read-only discovery surfaces:
+
+- Codex `debug prompt-input`;
+- Pi offline RPC `get_commands`;
+- Grok `inspect --json`.
+
+It requires every discovered Skill path to resolve to the supplied candidate,
+records the candidate tree digest and host versions, and fails closed on a path
+mismatch. A missing host is `UNVERIFIED`. Its receipt explicitly records model
+invocation as `NOT_RUN`, credential access as `NOT_REQUESTED`, and configuration
+mutation as `NOT_RUN`.
+
 ## Isolated project setup
 
 Use a disposable workspace and point `.agents/skills/3d-craft` at the candidate
@@ -31,9 +57,10 @@ mkdir -p "$smoke_root/.agents/skills"
 ln -s "$PWD/skills/3d-craft" "$smoke_root/.agents/skills/3d-craft"
 ```
 
-Record the candidate tree digest and host version. When the optional invocation
-smoke is run, also record its command, selected provider/model, result, and any
-host-runtime blocker. Never write credentials to the report.
+Use `scripts/host_discovery.py` to record the candidate tree digest and host
+versions. When the optional invocation smoke is run, record its command,
+selected provider/model, result, and any host-runtime blocker separately. Never
+write credentials to either report.
 
 ## Codex
 

@@ -13,6 +13,7 @@
   "scripts": {
     "validate": "python3 scripts/validate_source.py",
     "test": "python3 -m unittest discover -s tests -p 'test_*.py' && node --test tests/*.test.mjs",
+    "host:discovery": "python3 scripts/host_discovery.py --json",
     "viewer:dev": "npm run dev --workspace @3d-craft/r3f-viewer",
     "viewer:build": "npm run build --workspace @3d-craft/r3f-viewer",
     "viewer:typecheck": "npm run typecheck --workspace @3d-craft/r3f-viewer"

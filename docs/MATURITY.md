@@ -50,6 +50,17 @@ evidence, and evidence-bound validation. Local acceptance has exercised:
   with all eight routed gates and 21 delivery files passing validation;
 - separate Skill discovery and invocation smokes for Codex, Pi, and Grok.
 
+On 2026-09-04, the exact installable Skill tree from commit
+`346fba0616ea574c3f7080511dd7d46f2e8f6159` was also installed to the canonical
+user-global path `~/.agents/skills/3d-craft`. The 36 source and installed files
+matched byte-for-byte, source and Codex Skill validation passed, and discovery
+from the independent `resume` workspace passed on Codex 0.153.2, Pi 0.80.6, and
+Grok 1.0.5. The installation provenance tree digest was
+`211ea7211e56153ee3ce5acfd51b5ec02f5a223455d75202408de27f0fe50dcd`.
+This establishes local macOS global-install and discovery parity only; no model
+invocation, credential access, or provider configuration was part of that
+acceptance.
+
 These checks establish a locally sealed candidate, not a published release.
 Evidence is valid only for the exact commit, host versions, providers, Blender
 build, browser runtime, and artifacts recorded by the corresponding receipt.
@@ -87,7 +98,6 @@ this narrative does not self-certify that transition.
 
 - remote CI results for the candidate commit;
 - tag, GitHub Release, registry publication, or public package parity;
-- global user installation parity;
 - Windows or Linux host acceptance;
 - physical mobile-device GPU frame timing;
 - physical target-device evidence for the new Viewer split, including cold-load

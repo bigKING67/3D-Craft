@@ -193,7 +193,7 @@ def validate_root(root: Path, errors: list[str]) -> None:
         fail(errors, "only the audited Khronos glTF Validator runtime may be copied in V0.1")
     elif copied_upstreams[0].get("npm_integrity") != "sha512-odJ4k0tRkGXiDGn78yDBg+fBbAIvBnXxh3RwAta0emSxGtyagFE8B4xELB1oYe3S5RD8Ci3uZAsZaascH2LAEQ==":
         fail(errors, "Khronos glTF Validator npm integrity is missing or changed")
-    for script in ("install_local.sh", "package_skill.py", "release_gate.py", "upstream_diff.py"):
+    for script in ("host_discovery.py", "install_local.sh", "package_skill.py", "release_gate.py", "upstream_diff.py"):
         if not (root / "scripts" / script).is_file():
             fail(errors, f"missing root release script {script}")
     for document in ("PRODUCT.md", "ARCHITECTURE.md", "MATURITY.md", "ROADMAP.md", "HOST_COMPATIBILITY.md"):
