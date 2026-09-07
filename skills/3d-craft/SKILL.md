@@ -37,10 +37,21 @@ sculpting, rigging, complex animation, simulation, games, WebGPU, NeRF,
 Gaussian splats, photogrammetry, or external AI 3D generation. Explain the
 nearest supported slice without pretending the full request was completed.
 
+## Explanation-only questions
+
+For a conceptual explanation, design discussion, or interpretation that does
+not request inspection, creation, repair, export, integration, or runtime
+validation of a concrete asset, answer from the supplied facts and state any
+unverified assumption. Do not start the production loop, run `doctor`, create
+run state, invoke Blender, or open a browser merely to answer it. A later
+request to act on an identified asset starts at routing and does not convert an
+earlier explanation into production evidence.
+
 ## Start here
 
-1. Establish the target, intent, profile, quality tier, authoring mode, and
-   evidence level.
+1. Classify the request. End after an explanation-only answer when no concrete
+   production or validation action is requested; otherwise establish the
+   target, intent, profile, quality tier, authoring mode, and evidence level.
 2. Run `scripts/3d_craft.py route` with fixed enum values.
 3. Read only the references named by the route result.
 4. Run `scripts/3d_craft.py doctor --json` before tool-backed work.
@@ -54,7 +65,9 @@ nearest supported slice without pretending the full request was completed.
    performance evidence is required, link its schema-valid output from the
    browser67 draft, and run `bind-browser-evidence`; do not hand-copy measured
    profile fields, screenshots, or asset hashes.
-10. Work in causal stages and stop at the first failed hard gate.
+10. Work in causal stages. At the first failed hard gate, stop downstream
+    stages and completion claims; only an authorized smallest causal repair and
+    the affected evidence recheck may continue, under the three-attempt limit.
 11. Bind every delivered claim to observed evidence, hashes, and versions.
 
 For an end-to-end product asset, the default route is:
@@ -142,6 +155,12 @@ capability makes its gate `UNVERIFIED`; it does not authorize fabricated
 evidence.
 
 ## Production workflow
+
+Run only the stages selected by the route. A Blender-only asset route does not
+start web integration or browser QA; a Web3D route does not start Blender
+authoring or export unless the requested repair has an in-scope editable source
+asset. A bridge route runs both applicable portions and binds the handoff. Do
+not manufacture unused evidence to make a route appear more complete.
 
 ### 0. Preflight
 
@@ -235,8 +254,12 @@ Apply only relevant gates, but never waive one silently:
   lifecycle cleanup;
 - `delivery`: declared files, evidence, hashes, versions, and limitations.
 
-A hard-gate failure produces `FAIL` without a compensating total score. V0.1
-does not issue a numeric quality score.
+A hard-gate failure produces `FAIL` without a compensating total score. At the
+first failure, stop all downstream stages and do not claim completion. Existing
+authorization may cover the smallest causal repair and rerunning the failed or
+invalidated evidence, as described in `repair-and-security.md`; it does not
+waive the gate or authorize unrelated work. V0.1 does not issue a numeric
+quality score.
 
 `static` evidence is useful for preliminary structural inspection, but it
 cannot prove silhouette or key visual features. Its identity and delivery

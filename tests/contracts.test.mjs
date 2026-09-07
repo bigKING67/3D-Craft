@@ -278,6 +278,17 @@ test('all seven schemas validate complete contracts and reject nested drift', as
   assert.equal(validateScene(customOrigin), true, JSON.stringify(validateScene.errors))
 })
 
+test('skill entrypoint separates explanation-only requests, route-applicable work, and failed-gate repair', async () => {
+  const skill = await readFile(path.join(root, 'skills/3d-craft/SKILL.md'), 'utf8')
+  const repair = await readFile(path.join(root, 'skills/3d-craft/references/repair-and-security.md'), 'utf8')
+  assert.match(skill, /Explanation-only questions/)
+  assert.match(skill, /Do not start the production loop/)
+  assert.match(skill, /Run only the stages selected by the route/)
+  assert.match(skill, /At the first failed hard gate, stop downstream\s+stages and completion claims/)
+  assert.match(repair, /Rerun the failed evidence and every receipt invalidated/)
+  assert.match(repair, /After three unsuccessful attempts/)
+})
+
 test('viewer pins the validated R3F stack, splits dependency chunks, and keeps observability development-only', async () => {
   const viewer = path.join(root, 'skills/3d-craft/assets/r3f-viewer')
   const packageJson = JSON.parse(await readFile(path.join(viewer, 'package.json'), 'utf8'))

@@ -11,8 +11,15 @@ Limit automated repair to three attempts. Each attempt records:
 5. the same evidence rerun;
 6. `improved`, `regressed`, or `unchanged`.
 
-Do not restart modeling or change cameras merely to hide a failing comparison.
-After three unsuccessful attempts, report the concrete blocker.
+At the first failed hard gate, stop every downstream stage and do not describe
+the candidate, handoff, or delivery as complete. Within the existing task
+authorization, a repair may make only the smallest causal change needed to
+address the failure. Rerun the failed evidence and every receipt invalidated by
+that changed candidate before proceeding. Do not restart modeling or change
+cameras merely to hide a failing comparison, widen the task, or substitute
+unaffected evidence for the failed gate. After three unsuccessful attempts,
+report the concrete blocker and remaining `FAIL`, `BLOCKED`, or `UNVERIFIED`
+gates.
 
 ## Safety
 
