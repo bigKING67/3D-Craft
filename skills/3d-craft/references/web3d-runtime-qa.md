@@ -53,6 +53,42 @@ coverage from counts alone. A stale screenshot or DOM/3D disagreement is
 
 Mobile viewport testing proves layout only. It is not mobile GPU evidence.
 
+## Existing-app pointer interaction repairs
+
+For a bounded repair in an existing Three.js/R3F application, inspect its
+actual input, camera, transform, and lifecycle code. The bundled Viewer probe
+is not assumed to exist in another application. Preserve the application's
+asset authority and established visual intent. Applying these runtime checks
+does not establish support for character creation, rigging, or animation
+production outside the V0.1 boundary.
+
+- Separate input gain from a final rotation limit. Clamp the composed target
+  after additive effects such as convergence, not only the raw pointer input.
+  Choose limits from the actual asset and approved expression; do not copy
+  another project's angles or treat parameter names as proof of a limit.
+- Use elapsed-time damping for follow/return transitions, for example
+  `alpha = 1 - exp(-dt / timeConstant)`, rather than a fixed per-frame blend.
+  Source inspection can prove this mechanism, but equal perceived response on
+  different refresh-rate hardware still requires corresponding observations.
+- Define the no-input pose and exit behavior explicitly. Check pointer leave,
+  window blur, document hiding, and quick re-entry. If return is delayed,
+  cancel the pending return on fresh input and clear timers/listeners on
+  unmount. Keep intentional playful behavior within the approved limits.
+- Verify initial pose, both input extremes, near-target behavior, settled
+  return, interrupted return, and the first relevant camera/scroll transition.
+  Record whether input is synthetic or native and reject timing samples
+  contaminated by concurrent input. Quaternion angular distance measures total
+  rotation; it is not the same as a yaw or pitch component limit.
+- Test touch/coarse-pointer initialization separately from responsive layout.
+  A viewport changed after mount does not validate a capability decision read
+  only at mount. Do not call renderer draw/pass counters display FPS; use a
+  dedicated frame-time observation for timing claims.
+
+Keep ad hoc interaction receipts distinct from the canonical asset/browsing
+gate receipts. A successful application patch and screenshots do not imply a
+passing `3d_craft.py validate` run, Blender export, or source/GLB parity.
+Do not fabricate missing asset fields to fit the bundled Viewer contract.
+
 ## Explicit performance profile
 
 Do not treat the rolling values in `snapshot.raf` as a performance test. They

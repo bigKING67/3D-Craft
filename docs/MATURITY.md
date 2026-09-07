@@ -309,6 +309,53 @@ fixed validator is recorded separately in `reports/validation-r1-fixed.json`:
 the existing real run still passes all eight gates, with its 17 evidence files
 unchanged. This corrects the validation gap without replacing measured data.
 
+## 2026-09-07 existing-application case: 3D resume
+
+The installed Skill's 39 files were rechecked against source commit
+`9f8262eae7792792cae074fcd2b9f21b37564ec4` and matched byte-for-byte.
+That baseline has a clean local release-candidate attestation with eight
+checks passing, `release_eligible=true`, and ZIP SHA-256
+`3238bd6042dd7c52c8d419e3e20ca6ed210e9639fbf5e8137b2dbdef7f6121d2`.
+This is local candidate/install evidence, not a published release.
+
+A separate assisted application case used the existing `67-3d-resume` project.
+Commit `a41646bf5c1640d9735a35dac16ad5a5034c376c` changes only
+`web/src/App.tsx` and `web/src/scene/Scene.tsx`: bilingual hero copy, bounded
+eye rotation including convergence, elapsed-time follow/return damping, and
+pointer-exit/blur recovery with cancellation on re-entry. The current files
+were checked against that commit during closeout.
+
+Recorded evidence includes lint/build success, visible browser67 desktop and
+390px narrow-layout captures in both languages, synthetic pointer response,
+return and interrupted-return observations, and an initial-scroll inspection.
+The final return sample was approximately 0.05 degrees from its sampled neutral
+orientation. This is total quaternion distance, not a per-axis angle or FPS
+measurement. Browser tasks were finalized without closing user-owned tabs.
+
+Classification: **assisted existing-Web3D maintenance**, not a canonical
+3D-Craft gate run or independent fresh-session evaluation. The session used
+project instructions, global routing, design-craft, 3d-craft, browser67, and
+substantial prior context; success cannot be attributed to the installed
+Skill alone. Its character asset was not authored, rigged, or re-exported.
+This case does not expand V0.1's character/animation production boundary.
+Blender/GLB source parity, physical touch-device behavior, high-refresh
+hardware, strict performance profiling, and production deployment remain
+unverified for this case. Generic product/prop route parameters must not be
+treated as proof that this character asset satisfied the supported profile.
+
+The local evidence index is
+`~/Library/Application Support/3d-craft/evaluations/resume-case-20260907/index.json`.
+It preserves copies of the original receipts and hash-verified screenshots.
+Source binding is retrospective: the original browser receipts did not seal
+the application commit identity. Raw artifacts and personal content stay
+outside this repository and the installable Skill.
+
+The case identified a guidance gap around final transform limits, time-based
+damping, and pointer lifecycle. These checks are now documented in the existing
+Web3D runtime reference without adding a planner, probe API, schema, or runtime
+dependency. The new guidance was not present during the original case; it
+requires separate source/package validation and installation.
+
 ## Not yet established
 
 - remote CI results for the candidate commit;
@@ -324,6 +371,8 @@ unchanged. This corrects the validation gap without replacing measured data.
 Commit, push, tag, release, publish, and global installation remain separate
 authorization boundaries. A local candidate gate must report
 `release_eligible=false` whenever the source has no commit or the worktree is
-dirty. The referenced detached proof reports `true` only for
-`7dcf96a2704eda53199dec1259639323a47ac62a`; later source or documentation
-changes require a new clean gate before inheriting that provenance claim.
+dirty. Detached proofs apply only to their recorded commits, including
+`7dcf96a2704eda53199dec1259639323a47ac62a` and the later
+`9f8262eae7792792cae074fcd2b9f21b37564ec4` candidate above. Subsequent source
+or documentation changes require a new clean gate before inheriting a
+release-eligible provenance claim.
