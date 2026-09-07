@@ -90,6 +90,8 @@
         "triangles": {"type": "number", "minimum": 0}
       }
     },
+    "performance_profile": {"$ref": "#/$defs/performanceProfile"},
+    "profile_observation": {"$ref": "#/$defs/fileEvidence"},
     "lifecycle": {
       "type": "object",
       "additionalProperties": false,
@@ -131,6 +133,7 @@
             }
           ]
         },
+        "resource_stability": {"$ref": "#/$defs/resourceStability"},
         "observed_before_clean_reload": {
           "type": "object",
           "additionalProperties": false,
@@ -269,9 +272,149 @@
       "minItems": 2,
       "maxItems": 2
     },
+    "rendererMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draw_calls", "triangles", "geometries", "textures"],
+      "properties": {
+        "draw_calls": {"type": "integer", "minimum": 0},
+        "triangles": {"type": "integer", "minimum": 0},
+        "geometries": {"type": "integer", "minimum": 0},
+        "textures": {"type": "integer", "minimum": 0}
+      }
+    },
+    "performanceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["test_status"],
+      "properties": {
+        "test_status": {"enum": ["PASS", "FAIL", "UNVERIFIED"]},
+        "source": {"const": "viewer-observability"},
+        "warmup_ms": {"type": "number", "minimum": 0},
+        "sample_ms": {"type": "number", "exclusiveMinimum": 0},
+        "started_at_ms": {"type": "number", "minimum": 0},
+        "sample_started_at_ms": {"type": "number", "minimum": 0},
+        "completed_at_ms": {"type": "number", "minimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1},
+        "viewport": {"$ref": "#/$defs/pair"},
+        "device_pixel_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "visibility_state": {"const": "visible"},
+        "frame_p50_ms": {"type": "number", "minimum": 0},
+        "frame_p95_ms": {"type": "number", "minimum": 0},
+        "renderer_peak": {"$ref": "#/$defs/rendererMetrics"},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"test_status": {"const": "PASS"}}, "required": ["test_status"]},
+          "then": {
+            "properties": {
+              "source": {},
+              "warmup_ms": {},
+              "sample_ms": {},
+              "started_at_ms": {},
+              "sample_started_at_ms": {},
+              "completed_at_ms": {},
+              "sample_count": {},
+              "viewport": {},
+              "device_pixel_ratio": {},
+              "visibility_state": {},
+              "frame_p50_ms": {},
+              "frame_p95_ms": {},
+              "renderer_peak": {}
+            },
+            "required": [
+              "source",
+              "warmup_ms",
+              "sample_ms",
+              "started_at_ms",
+              "sample_started_at_ms",
+              "completed_at_ms",
+              "sample_count",
+              "viewport",
+              "device_pixel_ratio",
+              "visibility_state",
+              "frame_p50_ms",
+              "frame_p95_ms",
+              "renderer_peak"
+            ]
+          },
+          "else": {
+            "properties": {"reason": {}},
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "resourceSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mounts", "disposes", "geometries", "textures", "captured_at_ms"],
+      "properties": {
+        "mounts": {"type": "integer", "minimum": 1},
+        "disposes": {"type": "integer", "minimum": 0},
+        "geometries": {"type": "integer", "minimum": 0},
+        "textures": {"type": "integer", "minimum": 0},
+        "captured_at_ms": {"type": "number", "minimum": 0}
+      }
+    },
+    "resourceStability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["test_status"],
+      "properties": {
+        "test_status": {"enum": ["PASS", "FAIL", "UNVERIFIED"]},
+        "source": {"const": "viewer-observability"},
+        "cycles": {"type": "integer", "minimum": 3},
+        "samples": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 8,
+          "items": {"$ref": "#/$defs/resourceSample"}
+        },
+        "geometry_delta": {"type": "integer", "minimum": 0},
+        "texture_delta": {"type": "integer", "minimum": 0},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"test_status": {"const": "PASS"}}, "required": ["test_status"]},
+          "then": {
+            "properties": {
+              "source": {},
+              "cycles": {},
+              "samples": {},
+              "geometry_delta": {},
+              "texture_delta": {}
+            },
+            "required": [
+              "source",
+              "cycles",
+              "samples",
+              "geometry_delta",
+              "texture_delta"
+            ]
+          },
+          "else": {
+            "properties": {"reason": {}},
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
     "stringList": {
       "type": "array",
       "items": {"type": "string", "minLength": 1}
+    },
+    "fileEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 0}
+      }
     },
     "screenshot": {
       "type": "object",

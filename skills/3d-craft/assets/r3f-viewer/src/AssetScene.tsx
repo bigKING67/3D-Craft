@@ -1,5 +1,5 @@
 import { OrbitControls } from '@react-three/drei'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   Box3,
@@ -17,26 +17,17 @@ import {
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import {
-  currentSnapshot,
   noteContextHealthy,
   noteContextLost,
   noteContextRestoring,
   noteContextTestSupport,
   noteDispose,
   noteMount,
-  publishSnapshot,
   type ContextStatus,
+  type SceneFacts,
   type ViewerStatus,
 } from './observability'
-
-interface SceneFacts {
-  objects: number
-  meshes: number
-  materials: number
-  dimensions: [number, number, number]
-  nodeNames: string[]
-  materialNames: string[]
-}
+import { RuntimeProbe } from './RuntimeProbe'
 
 interface AssetSceneProps {
   assetUrl: string
@@ -237,63 +228,9 @@ function ContextLifecycle({ onStatus, resumedStatus }: {
   return null
 }
 
-function RuntimeProbe({ assetUrl, assetSha256, facts, status, error }: {
-  assetUrl: string
-  assetSha256: string
-  facts: SceneFacts
-  status: ViewerStatus
-  error: string
-}) {
-  const { camera, gl, size, viewport } = useThree()
-  const frames = useRef<number[]>([])
-  const lastFrame = useRef<number | null>(null)
-  const frameCount = useRef(currentSnapshot()?.raf.frame_count ?? 0)
-  const lastPublish = useRef(0)
-
-  useFrame(() => {
-    const now = performance.now()
-    frameCount.current += 1
-    if (lastFrame.current !== null) {
-      frames.current.push(now - lastFrame.current)
-      if (frames.current.length > 720) frames.current.shift()
-    }
-    lastFrame.current = now
-    if (now - lastPublish.current < 250) return
-    lastPublish.current = now
-    const sorted = [...frames.current].sort((a, b) => a - b)
-    const percentile = (fraction: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] : null
-    publishSnapshot({
-      status,
-      asset: Object.freeze({ url: assetUrl, sha256: assetSha256 }),
-      viewport: Object.freeze({ width: size.width, height: size.height, dpr: viewport.dpr }),
-      scene: Object.freeze({
-        ...facts,
-        dimensions: Object.freeze([...facts.dimensions]) as unknown as [number, number, number],
-        nodeNames: Object.freeze([...facts.nodeNames]) as unknown as string[],
-        materialNames: Object.freeze([...facts.materialNames]) as unknown as string[],
-        camera_position: Object.freeze(camera.position.toArray()) as unknown as [number, number, number],
-      }),
-      renderer: Object.freeze({
-        calls: gl.info.render.calls,
-        triangles: gl.info.render.triangles,
-        geometries: gl.info.memory.geometries,
-        textures: gl.info.memory.textures,
-      }),
-      raf: Object.freeze({
-        status: 'running',
-        frame_count: frameCount.current,
-        last_frame_at_ms: now,
-        frame_p50_ms: percentile(0.5),
-        frame_p95_ms: percentile(0.95),
-      }),
-      error: error ? Object.freeze({ message: error }) : null,
-    })
-  })
-  return null
-}
-
 export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onFacts }: AssetSceneProps) {
   const controls = useRef<OrbitControlsImpl>(null)
+  const [assetGeneration, setAssetGeneration] = useState(0)
   const [assetStatus, setAssetStatus] = useState<AssetStatus>('loading')
   const [contextStatus, setContextStatus] = useState<ContextStatus>('healthy')
   const [error, setError] = useState('')
@@ -323,6 +260,13 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
     onStatus(status, detail)
   }, [error, onStatus, status])
 
+  useEffect(() => {
+    if (!(import.meta.env.DEV || import.meta.env.MODE === 'test')) return
+    const remountAsset = () => setAssetGeneration((value) => value + 1)
+    window.addEventListener('3d-craft:test-remount', remountAsset)
+    return () => window.removeEventListener('3d-craft:test-remount', remountAsset)
+  }, [])
+
   return (
     <Canvas
       dpr={[1, 2]}
@@ -340,7 +284,7 @@ export function AssetScene({ assetUrl, assetSha256, reducedMotion, onStatus, onF
       <directionalLight position={[1.8, 2.4, 1.2]} intensity={3.2} />
       <directionalLight position={[-1.2, 0.8, -1.4]} intensity={1.1} />
       <group rotation={[0, MathUtils.degToRad(18), 0]}>
-        <LoadedAsset assetUrl={assetUrl} onStatus={callbacks.status} onFacts={callbacks.facts} />
+        <LoadedAsset key={assetGeneration} assetUrl={assetUrl} onStatus={callbacks.status} onFacts={callbacks.facts} />
       </group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.002, 0]}>
         <planeGeometry args={[3, 3]} />

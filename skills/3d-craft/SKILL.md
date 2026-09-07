@@ -50,8 +50,10 @@ nearest supported slice without pretending the full request was completed.
    bind the scene hash; do not hand-invent hashes.
 8. For rendered work, run `init-visual-review`, inspect the bound views, and
    complete every critical/major feature assessment before claiming identity.
-9. For runtime work, record browser67 observations in a draft and run
-   `bind-browser-evidence`; do not hand-copy screenshots or asset hashes.
+9. For runtime work, use the development Viewer's profile control when strict
+   performance evidence is required, link its schema-valid output from the
+   browser67 draft, and run `bind-browser-evidence`; do not hand-copy measured
+   profile fields, screenshots, or asset hashes.
 10. Work in causal stages and stop at the first failed hard gate.
 11. Bind every delivered claim to observed evidence, hashes, and versions.
 
@@ -201,12 +203,16 @@ renderer statistics, test remount/dispose behavior, and check desktop plus
 mobile layout. A final screenshot may use one bounded foreground interval;
 restore or finalize the exact managed task afterward. A viewport transaction
 that wakes a hidden canvas is readiness evidence only, not visual acceptance.
-Write a `3d-craft.browser-runtime-draft.v1` observation as described in
-`references/web3d-runtime-qa.md`, then run `bind-browser-evidence`. The command
-rejects hidden or viewport-mismatched PNGs, verifies that the served GLB hash
-matches the candidate, copies accepted bytes into the run, and writes the
-candidate-bound `browser-runtime.json`. External browser-cache paths remain
-provenance; they are not portable delivery evidence.
+For an approved strict profile, call the development/test-only
+`window.__THREE_D_CRAFT_TEST__.runPerformanceAndResourceProfile()` control and
+save its exact `3d-craft.web-profile-observation.v1` result outside the source
+repository. Link that file from a `3d-craft.browser-runtime-draft.v1`
+observation as described in `references/web3d-runtime-qa.md`, then run
+`bind-browser-evidence`. The command rejects hidden or viewport-mismatched
+PNGs, verifies that served and profiled GLB hashes match the candidate, seals
+accepted bytes into the run, and writes the candidate-bound
+`browser-runtime.json`. External browser-cache paths remain provenance; they
+are not portable delivery evidence.
 
 ### 8. Validation and repair
 

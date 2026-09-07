@@ -47,6 +47,15 @@
     "draw_calls": 30,
     "textures": 8,
     "frame_p95_ms": 25,
+    "performance_profile": {
+      "viewport": [1440, 900],
+      "device_pixel_ratio": 1,
+      "warmup_ms": 3000,
+      "sample_ms": 10000,
+      "resource_reload_cycles": 3,
+      "max_geometry_delta": 0,
+      "max_texture_delta": 0
+    },
     "required_node_coverage_percent": 100,
     "bbox_drift_percent": 0.5
   },

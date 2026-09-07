@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-test('all six schemas validate complete contracts and reject nested drift', async () => {
-  const names = ['run.v1.schema.json', 'scene.v1.schema.json', 'asset.v1.schema.json', 'validation.v1.schema.json', 'browser-runtime.v1.schema.json', 'browser-runtime-draft.v1.schema.json']
+test('all seven schemas validate complete contracts and reject nested drift', async () => {
+  const names = ['run.v1.schema.json', 'scene.v1.schema.json', 'asset.v1.schema.json', 'validation.v1.schema.json', 'browser-runtime.v1.schema.json', 'browser-runtime-draft.v1.schema.json', 'web-profile-observation.v1.schema.json']
   const schemas = await Promise.all(names.map(async (name) => JSON.parse(await readFile(path.join(root, 'skills/3d-craft/schemas', name), 'utf8'))))
-  assert.equal(new Set(schemas.map((schema) => schema.$id)).size, 6)
+  assert.equal(new Set(schemas.map((schema) => schema.$id)).size, 7)
   const ajv = new Ajv2020({ allErrors: true, strict: true })
   addFormats(ajv)
   for (const schema of schemas) {
@@ -86,7 +86,23 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
     asset: { sha256: hash, bytes: 3, url: '/asset.glb' },
     network: { status: 'PASS', bytes: 3, sha256: hash },
     raf: { delta: 10 },
-    metrics: { draw_calls: 1, textures: 0, frame_p95_ms: 8 },
+    metrics: { draw_calls: 1, textures: 0, frame_p50_ms: 7, frame_p95_ms: 8, geometries: 2, triangles: 3 },
+    performance_profile: {
+      test_status: 'PASS',
+      source: 'viewer-observability',
+      warmup_ms: 3000,
+      sample_ms: 10000,
+      started_at_ms: 100,
+      sample_started_at_ms: 3100,
+      completed_at_ms: 13100,
+      sample_count: 600,
+      viewport: [1440, 900],
+      device_pixel_ratio: 1,
+      visibility_state: 'visible',
+      frame_p50_ms: 7,
+      frame_p95_ms: 8,
+      renderer_peak: { draw_calls: 1, triangles: 3, geometries: 2, textures: 0 },
+    },
     lifecycle: {
       remount_test_status: 'PASS',
       ready_after_clean_reload: true,
@@ -97,6 +113,19 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
         restores: 1,
         ready_after_restore: true,
         raf_resumed_after_restore: true,
+      },
+      resource_stability: {
+        test_status: 'PASS',
+        source: 'viewer-observability',
+        cycles: 3,
+        samples: [
+          { mounts: 1, disposes: 0, geometries: 2, textures: 0, captured_at_ms: 14000 },
+          { mounts: 2, disposes: 1, geometries: 2, textures: 0, captured_at_ms: 15000 },
+          { mounts: 3, disposes: 2, geometries: 2, textures: 0, captured_at_ms: 16000 },
+          { mounts: 4, disposes: 3, geometries: 2, textures: 0, captured_at_ms: 17000 },
+        ],
+        geometry_delta: 0,
+        texture_delta: 0,
       },
     },
     cross_runtime: { required_node_coverage_percent: 100, bbox_drift_percent: 0.1 },
@@ -110,6 +139,15 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
   const contradictoryContextRecovery = structuredClone(browser)
   contradictoryContextRecovery.lifecycle.context_loss.restores = 0
   assert.equal(validateBrowser(contradictoryContextRecovery), false)
+  const hiddenPerformanceProfile = structuredClone(browser)
+  hiddenPerformanceProfile.performance_profile.visibility_state = 'hidden'
+  assert.equal(validateBrowser(hiddenPerformanceProfile), false)
+  const shortResourceProfile = structuredClone(browser)
+  shortResourceProfile.lifecycle.resource_stability.cycles = 2
+  assert.equal(validateBrowser(shortResourceProfile), false)
+  const negativeResourceDelta = structuredClone(browser)
+  negativeResourceDelta.lifecycle.resource_stability.geometry_delta = -1
+  assert.equal(validateBrowser(negativeResourceDelta), false)
   browser.runtime = 'generic-browser'
   assert.equal(validateBrowser(browser), false)
   const blockedBrowser = structuredClone(browser)
@@ -127,7 +165,23 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
     console_errors: 0,
     network: { status: 'PASS', bytes: 3, sha256: hash },
     raf: { delta: 10 },
-    metrics: { draw_calls: 1, textures: 0, frame_p95_ms: 8 },
+    metrics: { draw_calls: 1, textures: 0, frame_p50_ms: 7, frame_p95_ms: 8, geometries: 2, triangles: 3 },
+    performance_profile: {
+      test_status: 'PASS',
+      source: 'viewer-observability',
+      warmup_ms: 3000,
+      sample_ms: 10000,
+      started_at_ms: 100,
+      sample_started_at_ms: 3100,
+      completed_at_ms: 13100,
+      sample_count: 600,
+      viewport: [1440, 900],
+      device_pixel_ratio: 1,
+      visibility_state: 'visible',
+      frame_p50_ms: 7,
+      frame_p95_ms: 8,
+      renderer_peak: { draw_calls: 1, triangles: 3, geometries: 2, textures: 0 },
+    },
     lifecycle: {
       remount_test_status: 'PASS',
       ready_after_clean_reload: true,
@@ -138,6 +192,19 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
         restores: 1,
         ready_after_restore: true,
         raf_resumed_after_restore: true,
+      },
+      resource_stability: {
+        test_status: 'PASS',
+        source: 'viewer-observability',
+        cycles: 3,
+        samples: [
+          { mounts: 1, disposes: 0, geometries: 2, textures: 0, captured_at_ms: 14000 },
+          { mounts: 2, disposes: 1, geometries: 2, textures: 0, captured_at_ms: 15000 },
+          { mounts: 3, disposes: 2, geometries: 2, textures: 0, captured_at_ms: 16000 },
+          { mounts: 4, disposes: 3, geometries: 2, textures: 0, captured_at_ms: 17000 },
+        ],
+        geometry_delta: 0,
+        texture_delta: 0,
       },
     },
     cross_runtime: { required_node_coverage_percent: 100, bbox_drift_percent: 0.1 },
@@ -158,6 +225,47 @@ test('all six schemas validate complete contracts and reject nested drift', asyn
   assert.equal(validateBrowserDraft(browserDraft), true, JSON.stringify(validateBrowserDraft.errors))
   browserDraft.desktop_screenshot.visibility_state = 'hidden'
   assert.equal(validateBrowserDraft(browserDraft), false)
+
+  const profileObservation = {
+    schema: '3d-craft.web-profile-observation.v1',
+    status: 'PASS',
+    source: 'viewer-observability',
+    asset: { url: '/asset.glb', sha256: hash },
+    page: { visibility_state: 'visible', viewport: [1440, 900], device_pixel_ratio: 1 },
+    metrics: structuredClone(browser.metrics),
+    performance_profile: structuredClone(browser.performance_profile),
+    resource_stability: structuredClone(browser.lifecycle.resource_stability),
+  }
+  const validateProfileObservation = ajv.getSchema('https://3d-craft.local/schemas/web-profile-observation.v1.schema.json')
+  assert.equal(validateProfileObservation(profileObservation), true, JSON.stringify(validateProfileObservation.errors))
+  const hiddenProfileObservation = structuredClone(profileObservation)
+  hiddenProfileObservation.page.visibility_state = 'hidden'
+  assert.equal(validateProfileObservation(hiddenProfileObservation), false)
+  const nestedFailedProfileObservation = structuredClone(profileObservation)
+  nestedFailedProfileObservation.resource_stability = {
+    test_status: 'FAIL',
+    reason: 'resource counters did not settle',
+  }
+  assert.equal(validateProfileObservation(nestedFailedProfileObservation), false)
+  const failedProfileObservation = {
+    schema: '3d-craft.web-profile-observation.v1',
+    status: 'FAIL',
+    source: 'viewer-observability',
+    reason: 'document visibility changed to hidden',
+  }
+  assert.equal(validateProfileObservation(failedProfileObservation), true, JSON.stringify(validateProfileObservation.errors))
+  delete failedProfileObservation.reason
+  assert.equal(validateProfileObservation(failedProfileObservation), false)
+
+  const linkedBrowserDraft = structuredClone(browserDraft)
+  linkedBrowserDraft.desktop_screenshot.visibility_state = 'visible'
+  delete linkedBrowserDraft.metrics
+  delete linkedBrowserDraft.performance_profile
+  delete linkedBrowserDraft.lifecycle.resource_stability
+  linkedBrowserDraft.profile_observation_path = '/tmp/web-profile-observation.json'
+  assert.equal(validateBrowserDraft(linkedBrowserDraft), true, JSON.stringify(validateBrowserDraft.errors))
+  linkedBrowserDraft.metrics = structuredClone(profileObservation.metrics)
+  assert.equal(validateBrowserDraft(linkedBrowserDraft), false)
 
   const driftedScene = structuredClone(scene)
   driftedScene.runtime.credential = 'must-not-be-accepted'
@@ -182,6 +290,8 @@ test('viewer pins the validated R3F stack, splits dependency chunks, and keeps o
   assert.deepEqual(packageLock.packages[''].devDependencies, packageJson.devDependencies)
   const observability = await readFile(path.join(viewer, 'src/observability.ts'), 'utf8')
   const assetScene = await readFile(path.join(viewer, 'src/AssetScene.tsx'), 'utf8')
+  const runtimeProbe = await readFile(path.join(viewer, 'src/RuntimeProbe.tsx'), 'utf8')
+  const profileOrchestrator = await readFile(path.join(viewer, 'src/ProfileOrchestrator.tsx'), 'utf8')
   const app = await readFile(path.join(viewer, 'src/App.tsx'), 'utf8')
   const viteConfig = await readFile(path.join(viewer, 'vite.config.ts'), 'utf8')
   const runtimeQa = await readFile(path.join(root, 'skills/3d-craft/references/web3d-runtime-qa.md'), 'utf8')
@@ -192,15 +302,31 @@ test('viewer pins the validated R3F stack, splits dependency chunks, and keeps o
   assert.match(assetScene, /displayRoot\.scale\.setScalar/)
   assert.match(assetScene, /const disposedTextures = new Set<Texture>/)
   assert.match(assetScene, /loadedRoot = displayRoot\s+noteMount\(\)/)
-  assert.match(assetScene, /nodeNames: Object\.freeze/)
-  assert.match(assetScene, /materialNames: Object\.freeze/)
+  assert.match(runtimeProbe, /nodeNames: Object\.freeze/)
+  assert.match(runtimeProbe, /materialNames: Object\.freeze/)
   assert.match(assetScene, /webglcontextlost/)
   assert.match(assetScene, /webglcontextrestored/)
   assert.match(assetScene, /3d-craft:test-context-loss/)
   assert.match(assetScene, /queueMicrotask/)
   assert.match(assetScene, /enabled=\{status === 'ready'\}/)
+  assert.match(assetScene, /key=\{assetGeneration\}/)
   assert.match(observability, /status: 'idle' \| 'running'/)
   assert.match(observability, /test_supported/)
+  assert.match(observability, /resource_samples/)
+  assert.match(runtimeProbe, /PERFORMANCE_WARMUP_MS = 3_000/)
+  assert.match(runtimeProbe, /PERFORMANCE_SAMPLE_MS = 10_000/)
+  assert.match(runtimeProbe, /RESOURCE_SETTLE_FRAMES = 6/)
+  assert.match(runtimeProbe, /3d-craft:test-performance-start/)
+  assert.match(runtimeProbe, /3d-craft:test-resource-samples-reset/)
+  assert.match(runtimeProbe, /document\.visibilityState/)
+  assert.match(runtimeProbe, /viewport or device pixel ratio changed during profiling/)
+  assert.match(runtimeProbe, /mounts !== sampledMount\.current/)
+  assert.match(profileOrchestrator, /__THREE_D_CRAFT_TEST__/)
+  assert.match(profileOrchestrator, /runPerformanceAndResourceProfile/)
+  assert.match(profileOrchestrator, /DEFAULT_RESOURCE_CYCLES = 3/)
+  assert.match(profileOrchestrator, /3d-craft\.web-profile-observation\.v1/)
+  assert.match(profileOrchestrator, /document\.visibilityState/)
+  assert.match(profileOrchestrator, /VITE_ASSET_SHA256 is not a verified SHA-256/)
   assert.match(app, /motion.*reduce/)
   assert.match(app, /forcedReducedMotion \|\| media\.matches/)
   assert.match(app, /import\('\.\/AssetScene'\)/)
@@ -215,4 +341,7 @@ test('viewer pins the validated R3F stack, splits dependency chunks, and keeps o
   assert.match(runtimeQa, /`INVALID SAMPLE`/)
   assert.match(runtimeQa, /absence in production is expected/)
   assert.match(runtimeQa, /Context-loss evidence/)
+  assert.match(runtimeQa, /3d-craft:test-performance-start/)
+  assert.match(runtimeQa, /3d-craft:test-resource-samples-reset/)
+  assert.match(runtimeQa, /Old V0\.1 scenes without this nested budget remain readable/)
 })

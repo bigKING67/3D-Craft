@@ -58,3 +58,30 @@ The development viewer exposes `window.__THREE_D_CRAFT__`. It is a read-only
 snapshot with schema version, lifecycle state, asset identity, object counts,
 renderer statistics, RAF progress, mount/dispose counters, and an error
 summary. It exists only in development/test builds and is not a production API.
+
+Rolling RAF values are diagnostic only. The V0.2 performance path is an
+explicit state machine (`idle -> warming -> sampling -> complete`, or
+`invalid`) that freezes the real page viewport, DPR, and visibility, records
+monotonic timing, and publishes frame percentiles plus peak renderer counters.
+The separate resource-stability path reloads only the owned GLB subtree inside
+the same Canvas/WebGLRenderer and records one settled geometry/texture sample
+per mount. Browser receipt binding recomputes timing and resource deltas and
+requires the top-level metric summary to match the explicit profile.
+
+A separate development/test-only control surface,
+`window.__THREE_D_CRAFT_TEST__`, orchestrates that state machine and the reload
+sequence without granting write access to the frozen observability snapshot.
+It returns `web-profile-observation.v1`; a browser draft may link the exact
+external JSON instead of duplicating measured fields. Binding validates asset
+and page identity, seals a run-owned copy, then merges the observation into the
+browser receipt. Neither control surface exists as a production API, and the
+contract remains independent of browser67's transport implementation.
+
+Final validation rechecks the linked observation's content and PASS status
+after file-hash verification, then reconciles its measured fields and
+asset/page identity with the browser receipt. File integrity alone cannot
+establish that a report still represents its linked observation.
+
+An approved nested `scene.budgets.performance_profile` opts a run into the
+strict path. Its absence preserves V0.1 contract compatibility; it does not
+retroactively turn legacy rolling metrics into bounded performance evidence.

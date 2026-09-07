@@ -80,8 +80,8 @@ def validate_skill(skill: Path, errors: list[str]) -> None:
         if not schema_id or schema_id in schema_ids:
             fail(errors, f"missing or duplicate $id in {schema_path}")
         schema_ids.add(schema_id)
-    if len(schema_ids) != 6:
-        fail(errors, f"expected six schemas, found {len(schema_ids)}")
+    if len(schema_ids) != 7:
+        fail(errors, f"expected seven schemas, found {len(schema_ids)}")
     for script in ("3d_craft.py", "blend_inspect.py", "render_evidence.py", "gltf_validate.mjs"):
         if not (skill / "scripts" / script).is_file():
             fail(errors, f"missing Skill script {script}")

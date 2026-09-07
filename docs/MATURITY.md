@@ -1,9 +1,9 @@
 # Maturity
 
-## V0.1 status: locally sealed candidate
+## Current status: locally sealed candidate
 
 The product code at commit
-`fe5b05c6ec6a8cea781ef72aeeb22938a30beec2` implements the narrow
+`7dcf96a2704eda53199dec1259639323a47ac62a` implements the narrow
 product/prop vertical slice across Blender, GLB, an R3F viewer, browser runtime
 evidence, and evidence-bound validation. Local acceptance has exercised:
 
@@ -12,7 +12,7 @@ evidence, and evidence-bound validation. Local acceptance has exercised:
 - deterministic package construction with two-build SHA-256 parity;
 - the complete release gate from a clean detached worktree at that exact
   commit, with `release_eligible=true` and local package SHA-256
-  `52e88bba6c84c50867c165c2e4a3a04a78c77aa82c694d2aba8bf8d0a206d3e7`;
+  `6a7f33b08a67bad602970a7c1bde10652aa816c4590ef23b38723dd51c02e97c`;
 - validation of an independently extracted package, including execution of its
   bundled Khronos validator against a minimal GLB and an isolated doctor
   capability probe;
@@ -125,9 +125,189 @@ is outside the repository at
 `~/Library/Application Support/3d-craft/runs/v02-context-loss-20260904/context-loss-observation.json`
 (SHA-256 `911af2c2a0e80ab0caeded4d52072dc24e4435f68ff584e8fcebd4136802ef24`).
 
-This is uncommitted local working-tree evidence for one slice. It is not a
-clean-commit release attestation, packaged-host proof, remote CI result, or a
-claim that all of V0.2 is complete.
+The implementation was subsequently committed as
+`7dcf96a2704eda53199dec1259639323a47ac62a`. A clean detached release gate for
+that exact commit passed source validation, unit and contract tests, Viewer
+typecheck/build, reproducible packaging, isolated package validation, isolated
+glTF runtime, and the isolated Doctor glTF capability probe. Its local package
+SHA-256 is `6a7f33b08a67bad602970a7c1bde10652aa816c4590ef23b38723dd51c02e97c`.
+This is still not remote CI, a tag, a published release, or a claim that all of
+V0.2 is complete.
+
+## V0.2 working-tree slice: explicit performance and resource stability
+
+The second V0.2 slice replaces ambiguous rolling-frame claims with a bounded
+performance state machine. The development Viewer freezes the actual page
+viewport, DPR, and visibility; performs a 3,000 ms warmup followed by at least
+10,000 ms of sampling; records monotonic timestamps, sample count, frame
+p50/p95, and peak renderer counters; and invalidates the run if visibility,
+viewport, DPR, or Viewer readiness changes. Resource stability reloads only the
+owned GLB subtree in the same Canvas/WebGLRenderer and records one sample only
+after geometry and texture counters remain unchanged for six frames.
+
+Live testing exposed and fixed two false-pass risks. First, a two-frame sample
+could capture the base scene before the reloaded asset reached the renderer,
+producing a misleading negative geometry delta; passing deltas are now
+nonnegative and samples are mount-generation aware. Second, React 19
+StrictMode may perform two development-effect cleanups for one reload, so the
+durable invariant is exactly one new mount and at least one new disposal per
+cycle, not exactly one disposal.
+
+The browser receipt and scene contract now carry optional strict performance
+extensions. Once an approved `budgets.performance_profile` is declared,
+missing profile or resource evidence is `UNVERIFIED`; failed, malformed,
+mismatched, or over-budget evidence is `FAIL`. Legacy V0.1 scenes without the
+nested budget remain readable, but do not inherit the stronger claim.
+
+Live browser67 evidence ran on the npm-current stable CLI and extension version
+0.11.2. The final visible 1512x823, DPR 2 observation completed a 3,001.6 ms
+warmup and 10,008.6 ms sample with 1,201 frames: frame p50 was 8.30 ms, p95 was
+9.20 ms, and renderer peaks were 17 draw calls, 10,118 triangles, 15
+geometries, and one texture. Three sequential same-renderer reloads produced
+four settled samples with 15 geometries and one texture throughout, yielding
+zero geometry and texture deltas; each StrictMode reload recorded two cleanup
+events. A fresh cache-bypassed fetch returned 196,188 bytes with candidate GLB
+SHA-256 `120e6ab9e2ef56a06cb9d01a92a2b77c179c2513f0db03a6d6e976660225bf8d`.
+
+The schema-valid local browser draft is outside the repository at
+`~/Library/Application Support/3d-craft/runs/v02-performance-20260904/browser-runtime-draft.json`
+(SHA-256 `bd530aaff0bacf28fc309bcb0ed0ea402caee3bf431c2799bd28fae7a5195734`).
+Its visually reviewed 3024x1646 PNG is stored beside it as
+`browser-performance-visible.png` (SHA-256
+`ccf7f7275b6de015950a9b5bc4baa1e714a582ed358c588c308206fe9eac5600`).
+A preceding hidden screenshot with contradictory dimensions remains recorded
+as `INVALID SAMPLE`.
+
+This live draft intentionally retains `responsive_layout=UNVERIFIED`; mobile
+layout and physical-mobile GPU timing were not retested, and context-loss
+recovery was not repeated in this slice. The natural host viewport also differs
+from the coffee-grinder fixture's approved 1440x900, DPR 1 profile, so this is
+not a fresh full-run gate for that fixture. The implementation and this
+narrative are uncommitted working-tree changes and have no clean-package,
+remote-CI, tag, release, or publication provenance yet.
+
+## V0.2 working-tree slice: profile orchestration and linked evidence
+
+The third V0.2 slice removes manual timing, polling, renderer-field mapping,
+and resource-delta transcription from the normal Agent path. A separate
+development/test-only `window.__THREE_D_CRAFT_TEST__` control runs the explicit
+profile and three same-renderer asset reloads, then returns one immutable
+`3d-craft.web-profile-observation.v1` object. It does not mutate the frozen
+runtime snapshot and remains absent as a production API. The browser draft can
+link that exact JSON, while `bind-browser-evidence` validates it, rejects dual
+inline/linked authority, verifies candidate and desktop page identity, copies
+the observation into run-owned evidence, and makes later hash tampering fail
+the browser gates.
+
+Local source validation, all 44 Python tests, both Node contract tests, Viewer
+typecheck/build, and whitespace checks pass. The production build transforms
+575 modules; the largest pinned Three.js chunk remains 768.28 kB under the
+existing 800 kB build ceiling. These are working-tree results, not clean-commit
+or remote-CI provenance.
+
+Live verification used the npm-current browser67 0.11.2 runtime with matching
+extension source identity in a dedicated managed Agent Window. The background
+tab remained `visibilityState=hidden`, so the strict profile correctly had no
+eligible snapshot. After one bounded foreground interval, two consecutive
+one-call profiles completed. The saved second observation used a real
+1512x823, DPR 2 page, a 3,000 ms warmup, at least 10,000 ms of sampling, and
+1,200 frames. It measured frame p50 8.30 ms, p95 10.10 ms, 17 peak draw calls,
+10,118 triangles, 15 geometries, and one texture. Three sequential reloads
+produced four samples with exactly one additional mount and two StrictMode
+cleanups per cycle; geometry and texture deltas were both zero. A bounded
+console observation contained zero errors and the one already documented R3F
+`THREE.Clock` warning.
+
+The exact schema-valid observation is outside the repository at
+`~/Library/Application Support/3d-craft/runs/v02-profile-orchestrator-20260904/web-profile-observation.json`
+(SHA-256 `bc6c939c34736b2e33f487c03606491306d40d0c23af4874a59a98886a17fb20`).
+The visually reviewed 3024x1646 viewport image is beside it as
+`browser-profile-visible.png` (SHA-256
+`ef29ac89556ed5b445c991a91fd02335b5a84f6d03457d058d4a0424e8b42fa5`).
+Two preceding screenshots remain explicitly invalid: one was captured while
+hidden, and one reported a 1512x823, DPR 2 page but produced a 3024x1618 PNG.
+Only an atomic set, verify, capture, and clear transaction produced matching
+3024x1646 evidence. The exact managed tab was then finalized with one verified
+close; user tabs were not adopted or closed.
+
+This observation used candidate GLB SHA-256
+`1c2fbd8291ac9b5285fa1a15a95327ecf791af741f7c8408211e5ead3093396c`,
+but it was not sealed into a fresh complete 3D-Craft run. Its natural viewport
+also differs from the coffee-grinder scene's approved 1440x900, DPR 1 budget.
+It therefore proves the new orchestration and linked-observation contract, not
+a new full fixture PASS, mobile layout, physical-device performance, or V0.2
+completion.
+
+## Approved-viewport profile observation (2026-09-07)
+
+A dedicated browser67 0.11.4 Agent tab exercised the current working-tree
+Viewer at the coffee-grinder budget's exact 1440x900, DPR 1 viewport. One
+debugger batch set the viewport, verified page dimensions, awaited the profile,
+and cleared the override. The immutable observation passed its JSON schema:
+3,000 ms warmup, 10,000 ms sample, 1,200 frames, frame p50 8.30 ms and p95
+9.20 ms, with 17 draw calls, 10,118 triangles, 15 geometries, and one texture.
+Three same-renderer reloads yielded zero geometry and texture deltas. A fresh
+HTTP 200 fetch returned 196,188 bytes matching candidate SHA-256
+`1c2fbd8291ac9b5285fa1a15a95327ecf791af741f7c8408211e5ead3093396c`.
+
+The visible 1440x900 desktop PNG passed viewport/bitmap checks and visual
+inspection: the complete asset and evidence rail remain in frame without
+horizontal overflow. The observation is stored outside the repository at
+`~/Library/Application Support/3d-craft/runs/v02-approved-profile-20260907/web-profile-observation.json`
+(SHA-256 `38afbde31847dfa3afa4e75274c4dbd551e556abf7bbd221ab1977a47cb998a1`).
+
+The subsequent mobile capture was hidden and remains `INVALID SAMPLE`;
+bounded console observation timed out and remains `UNVERIFIED`. This run
+reused the existing sealed GLB rather than rebuilding the complete Blender
+fixture. It therefore establishes approved-viewport performance and desktop
+evidence only, not a fresh complete fixture gate or V0.2 completion. The exact
+Agent tab was closed with verification and no remaining unkept task tabs.
+
+## Fresh complete profile run (2026-09-07)
+
+The current working-tree slice subsequently passed all eight routed gates in
+the new external run
+`~/Library/Application Support/3d-craft/runs/coffee-grinder/v02-full-20260907`.
+Two Blender 5.2.1 factory-startup builds produced matching normalized scene
+and GLB semantic digests. The candidate GLB SHA-256 is
+`8779a6ea0895f69368195ed4086f786d18e5615768914cdd7d2a04df3c09be2b`.
+Structure inspection, six-view identity review, lookdev inspection, and
+Khronos validation passed before browser evidence was bound.
+
+The dedicated browser67 0.11.4 tab observed a visible 1440x900, DPR 1 profile:
+3,000 ms warmup, 10,000 ms sampling, 1,201 frames, p95 9.30 ms, 17 draw
+calls, and 10,118 rendered triangles. Three same-renderer asset reloads had
+zero geometry/texture deltas. The served GLB hash matched, node coverage was
+100%, and bounding-box drift was below 0.000003%. Visible desktop and mobile
+captures verified their requested viewport/DPR and PNG dimensions; visual
+review found the complete asset and controls in frame without horizontal
+overflow. The mobile full-page PNG is 390x1313 for a 390x844 CSS viewport.
+
+Separate raw browser receipts record a real context loss and restore with 28
+fresh frames after recovery, pointer-driven orbit movement, exact camera
+reset, and ready state after a cache-bypassed reload. A bounded console
+observation returned zero errors and the known `THREE.Clock` warning, with
+listeners removed and debugger release verified. The binder sealed the profile
+and both screenshots into run-owned evidence; `reports/validation.json`
+reports `PASS` across authority, reproduction, scene integrity, identity,
+glTF, cross-runtime, web-runtime, and delivery, with 22 delivery files.
+
+This supersedes the prior mobile/console gaps for this new candidate only.
+Physical mobile GPU timing remains unverified. The exact task tab was closed
+with verification and no remaining unkept tabs. These are local working-tree
+results, not clean-commit, remote-CI, publication, or complete V0.2-roadmap
+provenance.
+
+The subsequent pre-commit review reproduced a linked-evidence validation gap:
+changing both report-level and inline p95 values while leaving the sealed
+observation untouched still passed. The validator now checks the linked
+content and reconciles measured fields plus asset/page identity. Regression
+coverage rejects report-only metric, timing, resource, and URL drift as well
+as hash-valid malformed, failed, or page-mismatched linked observations.
+All 44 Python tests and both Node contract tests pass. Revalidation with the
+fixed validator is recorded separately in `reports/validation-r1-fixed.json`:
+the existing real run still passes all eight gates, with its 17 evidence files
+unchanged. This corrects the validation gap without replacing measured data.
 
 ## Not yet established
 
@@ -145,5 +325,5 @@ Commit, push, tag, release, publish, and global installation remain separate
 authorization boundaries. A local candidate gate must report
 `release_eligible=false` whenever the source has no commit or the worktree is
 dirty. The referenced detached proof reports `true` only for
-`fe5b05c6ec6a8cea781ef72aeeb22938a30beec2`; later source or documentation
+`7dcf96a2704eda53199dec1259639323a47ac62a`; later source or documentation
 changes require a new clean gate before inheriting that provenance claim.

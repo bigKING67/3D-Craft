@@ -85,6 +85,8 @@ BROWSER_REPORT_KEYS = {
     "network",
     "raf",
     "metrics",
+    "performance_profile",
+    "profile_observation",
     "lifecycle",
     "cross_runtime",
     "desktop_screenshot",
@@ -96,7 +98,11 @@ BROWSER_REPORT_KEYS = {
     "warnings",
     "unverified",
 }
-BROWSER_DRAFT_KEYS = (BROWSER_REPORT_KEYS - {"asset", "runtime"}) | {"asset_url", "schema"}
+BROWSER_DRAFT_KEYS = (BROWSER_REPORT_KEYS - {"asset", "runtime", "profile_observation"}) | {
+    "asset_url",
+    "profile_observation_path",
+    "schema",
+}
 
 
 def emit(payload: dict[str, Any], *, as_json: bool, output: str | None = None) -> None:
@@ -542,19 +548,65 @@ def scene_contract_errors(scene: Any) -> list[str]:
         or any(item not in {"desktop", "mobile"} for item in runtime["target_devices"])
     ):
         errors.append("scene runtime values are invalid")
-    budget_names = {"status", "asset_bytes", "triangles", "draw_calls", "textures", "frame_p95_ms", "required_node_coverage_percent", "bbox_drift_percent"}
+    budget_names = {
+        "status",
+        "asset_bytes",
+        "triangles",
+        "draw_calls",
+        "textures",
+        "frame_p95_ms",
+        "performance_profile",
+        "required_node_coverage_percent",
+        "bbox_drift_percent",
+    }
     budgets = scene.get("budgets")
     if not exact_keys(budgets, budget_names, {"status"}) or budgets.get("status") not in {"approved", "provisional"}:
         errors.append("scene budgets are malformed")
     else:
         for name, value in budgets.items():
-            if name == "status" or value is None:
+            if name in {"status", "performance_profile"} or value is None:
                 continue
             if not is_number(value) or value < 0 or (name in {"asset_bytes", "triangles", "draw_calls", "textures"} and not isinstance(value, int)):
                 errors.append(f"scene budget {name} is invalid")
         coverage = budgets.get("required_node_coverage_percent")
         if is_number(coverage) and coverage > 100:
             errors.append("scene required_node_coverage_percent exceeds 100")
+        performance_budget = budgets.get("performance_profile")
+        if performance_budget is not None:
+            performance_keys = {
+                "viewport",
+                "device_pixel_ratio",
+                "warmup_ms",
+                "sample_ms",
+                "resource_reload_cycles",
+                "max_geometry_delta",
+                "max_texture_delta",
+            }
+            performance = as_object(performance_budget)
+            viewport = performance.get("viewport")
+            if not exact_keys(performance_budget, performance_keys, performance_keys) or not (
+                isinstance(viewport, list)
+                and len(viewport) == 2
+                and all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in viewport)
+                and is_number(performance.get("device_pixel_ratio"))
+                and performance["device_pixel_ratio"] > 0
+                and isinstance(performance.get("warmup_ms"), int)
+                and not isinstance(performance.get("warmup_ms"), bool)
+                and performance["warmup_ms"] >= 0
+                and isinstance(performance.get("sample_ms"), int)
+                and not isinstance(performance.get("sample_ms"), bool)
+                and performance["sample_ms"] > 0
+                and isinstance(performance.get("resource_reload_cycles"), int)
+                and not isinstance(performance.get("resource_reload_cycles"), bool)
+                and performance["resource_reload_cycles"] >= 3
+                and all(
+                    isinstance(performance.get(name), int)
+                    and not isinstance(performance.get(name), bool)
+                    and performance[name] >= 0
+                    for name in ("max_geometry_delta", "max_texture_delta")
+                )
+            ):
+                errors.append("scene performance_profile budget is malformed")
     evidence = scene.get("required_evidence")
     if not isinstance(evidence, list) or len(evidence) != len(set(evidence)) or any(item not in KNOWN_EVIDENCE for item in evidence):
         errors.append("scene required_evidence is invalid")
@@ -761,6 +813,7 @@ def observed_evidence(run_dir: Path) -> list[dict[str, str]]:
         "reproduction.json": "clean-reproduction",
         "gltf-validation.json": "gltf-validation",
         "browser-runtime.json": "browser-runtime",
+        "browser-profile-observation.json": "browser-profile-observation",
         "host-smoke.json": "host-smoke",
     }
     return [
@@ -871,6 +924,244 @@ def visual_review_state(
     return "PASS", "Critical and major identity features passed a candidate-bound fixed-view review."
 
 
+def performance_profile_errors(profile: Any, metrics: Any) -> list[str]:
+    if profile is None:
+        return []
+    allowed = {
+        "test_status",
+        "source",
+        "warmup_ms",
+        "sample_ms",
+        "started_at_ms",
+        "sample_started_at_ms",
+        "completed_at_ms",
+        "sample_count",
+        "viewport",
+        "device_pixel_ratio",
+        "visibility_state",
+        "frame_p50_ms",
+        "frame_p95_ms",
+        "renderer_peak",
+        "reason",
+    }
+    value = as_object(profile)
+    status = value.get("test_status")
+    if not exact_keys(profile, allowed, {"test_status"}) or status not in {"PASS", "FAIL", "UNVERIFIED"}:
+        return ["browser performance profile is malformed"]
+    if status != "PASS":
+        if not isinstance(value.get("reason"), str) or not value.get("reason", "").strip():
+            return ["a non-passing browser performance profile requires a reason"]
+        return []
+
+    required = allowed - {"reason"}
+    renderer_keys = {"draw_calls", "triangles", "geometries", "textures"}
+    renderer = as_object(value.get("renderer_peak"))
+    viewport = value.get("viewport")
+    timestamps = (
+        value.get("started_at_ms"),
+        value.get("sample_started_at_ms"),
+        value.get("completed_at_ms"),
+    )
+    if not (
+        exact_keys(profile, allowed, required)
+        and value.get("source") == "viewer-observability"
+        and is_number(value.get("warmup_ms"))
+        and value["warmup_ms"] >= 0
+        and is_number(value.get("sample_ms"))
+        and value["sample_ms"] > 0
+        and all(is_number(timestamp) and timestamp >= 0 for timestamp in timestamps)
+        and value["sample_started_at_ms"] - value["started_at_ms"] >= value["warmup_ms"]
+        and value["completed_at_ms"] - value["sample_started_at_ms"] >= value["sample_ms"]
+        and isinstance(value.get("sample_count"), int)
+        and not isinstance(value.get("sample_count"), bool)
+        and value["sample_count"] > 0
+        and isinstance(viewport, list)
+        and len(viewport) == 2
+        and all(isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in viewport)
+        and is_number(value.get("device_pixel_ratio"))
+        and value["device_pixel_ratio"] > 0
+        and value.get("visibility_state") == "visible"
+        and is_number(value.get("frame_p50_ms"))
+        and value["frame_p50_ms"] >= 0
+        and is_number(value.get("frame_p95_ms"))
+        and value["frame_p95_ms"] >= value["frame_p50_ms"]
+        and exact_keys(value.get("renderer_peak"), renderer_keys, renderer_keys)
+        and all(
+            isinstance(renderer.get(name), int)
+            and not isinstance(renderer.get(name), bool)
+            and renderer[name] >= 0
+            for name in renderer_keys
+        )
+    ):
+        return ["a passing browser performance profile is incomplete or internally inconsistent"]
+
+    summary = as_object(metrics)
+    expected_summary = {
+        "draw_calls": renderer["draw_calls"],
+        "triangles": renderer["triangles"],
+        "geometries": renderer["geometries"],
+        "textures": renderer["textures"],
+        "frame_p50_ms": value["frame_p50_ms"],
+        "frame_p95_ms": value["frame_p95_ms"],
+    }
+    if any(summary.get(name) != expected for name, expected in expected_summary.items()):
+        return ["browser metrics do not match the passing performance profile"]
+    return []
+
+
+def resource_stability_errors(stability: Any) -> list[str]:
+    if stability is None:
+        return []
+    allowed = {
+        "test_status",
+        "source",
+        "cycles",
+        "samples",
+        "geometry_delta",
+        "texture_delta",
+        "reason",
+    }
+    value = as_object(stability)
+    status = value.get("test_status")
+    if not exact_keys(stability, allowed, {"test_status"}) or status not in {"PASS", "FAIL", "UNVERIFIED"}:
+        return ["browser resource-stability observation is malformed"]
+    if status != "PASS":
+        if not isinstance(value.get("reason"), str) or not value.get("reason", "").strip():
+            return ["a non-passing resource-stability observation requires a reason"]
+        return []
+
+    required = allowed - {"reason"}
+    cycles = value.get("cycles")
+    samples = value.get("samples")
+    if not (
+        exact_keys(stability, allowed, required)
+        and value.get("source") == "viewer-observability"
+        and isinstance(cycles, int)
+        and not isinstance(cycles, bool)
+        and cycles >= 3
+        and isinstance(samples, list)
+        and len(samples) == cycles + 1
+        and len(samples) <= 8
+        and isinstance(value.get("geometry_delta"), int)
+        and not isinstance(value.get("geometry_delta"), bool)
+        and value["geometry_delta"] >= 0
+        and isinstance(value.get("texture_delta"), int)
+        and not isinstance(value.get("texture_delta"), bool)
+        and value["texture_delta"] >= 0
+    ):
+        return ["a passing resource-stability observation is incomplete"]
+
+    sample_keys = {"mounts", "disposes", "geometries", "textures", "captured_at_ms"}
+    normalized: list[dict[str, Any]] = []
+    for sample in samples:
+        row = as_object(sample)
+        if not (
+            exact_keys(sample, sample_keys, sample_keys)
+            and all(
+                isinstance(row.get(name), int)
+                and not isinstance(row.get(name), bool)
+                and row[name] >= (1 if name == "mounts" else 0)
+                for name in ("mounts", "disposes", "geometries", "textures")
+            )
+            and is_number(row.get("captured_at_ms"))
+            and row["captured_at_ms"] >= 0
+        ):
+            return ["browser resource-stability sample is malformed"]
+        normalized.append(row)
+
+    for previous, current in zip(normalized, normalized[1:]):
+        if not (
+            current["mounts"] == previous["mounts"] + 1
+            and current["disposes"] > previous["disposes"]
+            and current["captured_at_ms"] > previous["captured_at_ms"]
+        ):
+            return ["browser resource-stability samples do not describe sequential settled reloads with cleanup"]
+    if (
+        value["geometry_delta"] != normalized[-1]["geometries"] - normalized[0]["geometries"]
+        or value["texture_delta"] != normalized[-1]["textures"] - normalized[0]["textures"]
+    ):
+        return ["browser resource-stability deltas do not match the samples"]
+    return []
+
+
+def web_profile_observation_errors(observation: Any) -> list[str]:
+    """Validate one Viewer-produced performance/resource observation."""
+    allowed = {
+        "schema",
+        "status",
+        "source",
+        "asset",
+        "page",
+        "metrics",
+        "performance_profile",
+        "resource_stability",
+        "reason",
+    }
+    required = {"schema", "status", "source"}
+    if not exact_keys(observation, allowed, required):
+        return ["web profile observation keys do not match web-profile-observation.v1"]
+    value = as_object(observation)
+    if (
+        value.get("schema") != "3d-craft.web-profile-observation.v1"
+        or value.get("source") != "viewer-observability"
+        or value.get("status") not in {"PASS", "FAIL"}
+    ):
+        return ["web profile observation schema, source, or status is invalid"]
+    if value["status"] == "FAIL":
+        if not isinstance(value.get("reason"), str) or not value.get("reason", "").strip():
+            return ["a failed web profile observation requires a reason"]
+        return []
+
+    passing_required = required | {
+        "asset",
+        "page",
+        "metrics",
+        "performance_profile",
+        "resource_stability",
+    }
+    if not exact_keys(observation, allowed, passing_required):
+        return ["a passing web profile observation is incomplete"]
+    asset = as_object(value.get("asset"))
+    page = as_object(value.get("page"))
+    viewport = page.get("viewport")
+    errors: list[str] = []
+    if not (
+        exact_keys(value.get("asset"), {"url", "sha256"}, {"url", "sha256"})
+        and isinstance(asset.get("url"), str)
+        and asset["url"].strip()
+        and isinstance(asset.get("sha256"), str)
+        and HASH_PATTERN.fullmatch(asset["sha256"])
+    ):
+        errors.append("web profile asset identity is malformed")
+    if not (
+        exact_keys(
+            value.get("page"),
+            {"visibility_state", "viewport", "device_pixel_ratio"},
+            {"visibility_state", "viewport", "device_pixel_ratio"},
+        )
+        and page.get("visibility_state") == "visible"
+        and isinstance(viewport, list)
+        and len(viewport) == 2
+        and all(isinstance(item, int) and not isinstance(item, bool) and item > 0 for item in viewport)
+        and is_number(page.get("device_pixel_ratio"))
+        and page["device_pixel_ratio"] > 0
+    ):
+        errors.append("web profile page identity is malformed")
+    errors.extend(performance_profile_errors(value.get("performance_profile"), value.get("metrics")))
+    errors.extend(resource_stability_errors(value.get("resource_stability")))
+    profile = as_object(value.get("performance_profile"))
+    stability = as_object(value.get("resource_stability"))
+    if profile.get("test_status") != "PASS" or stability.get("test_status") != "PASS":
+        errors.append("a passing web profile observation must contain passing nested observations")
+    if (
+        profile.get("viewport") != page.get("viewport")
+        or profile.get("device_pixel_ratio") != page.get("device_pixel_ratio")
+        or profile.get("visibility_state") != page.get("visibility_state")
+    ):
+        errors.append("web profile page identity does not match its performance profile")
+    return errors
+
+
 def browser_runtime_errors(browser: Any) -> list[str]:
     """Validate the portable browser-runtime contract without third-party packages."""
     if not isinstance(browser, dict):
@@ -949,10 +1240,29 @@ def browser_runtime_errors(browser: Any) -> list[str]:
         not is_number(as_object(metrics).get(name)) or metrics[name] < 0 for name in metric_keys
     ):
         errors.append("browser performance metrics are malformed")
+    errors.extend(performance_profile_errors(browser.get("performance_profile"), metrics))
+    profile_observation = browser.get("profile_observation")
+    if profile_observation is not None and not (
+        exact_keys(profile_observation, {"path", "sha256", "bytes"}, {"path", "sha256", "bytes"})
+        and isinstance(profile_observation.get("path"), str)
+        and profile_observation["path"].strip()
+        and isinstance(profile_observation.get("sha256"), str)
+        and HASH_PATTERN.fullmatch(profile_observation["sha256"])
+        and isinstance(profile_observation.get("bytes"), int)
+        and not isinstance(profile_observation.get("bytes"), bool)
+        and profile_observation["bytes"] >= 0
+    ):
+        errors.append("browser profile-observation binding is malformed")
     lifecycle = browser.get("lifecycle")
     if not exact_keys(
         lifecycle,
-        {"remount_test_status", "ready_after_clean_reload", "context_loss", "observed_before_clean_reload"},
+        {
+            "remount_test_status",
+            "ready_after_clean_reload",
+            "context_loss",
+            "resource_stability",
+            "observed_before_clean_reload",
+        },
         {"remount_test_status", "ready_after_clean_reload"},
     ) or as_object(lifecycle).get("remount_test_status") not in {"PASS", "FAIL", "UNVERIFIED"} or not isinstance(
         as_object(lifecycle).get("ready_after_clean_reload"), bool
@@ -992,6 +1302,7 @@ def browser_runtime_errors(browser: Any) -> list[str]:
             )
         if not context_valid:
             errors.append("browser context-loss observation is malformed or contradicts a PASS verdict")
+    errors.extend(resource_stability_errors(as_object(lifecycle).get("resource_stability")))
     cross_runtime = browser.get("cross_runtime")
     cross_keys = {"required_node_coverage_percent", "bbox_drift_percent"}
     if not exact_keys(cross_runtime, cross_keys | {"note"}, cross_keys) or any(
@@ -1233,6 +1544,7 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
     report_path = run_dir / "evidence" / "browser-runtime.json"
     desktop_path = run_dir / "evidence" / "browser-desktop.png"
     mobile_path = run_dir / "evidence" / "browser-mobile.png"
+    profile_path = run_dir / "evidence" / "browser-profile-observation.json"
     if report_path.exists():
         raise ValueError("browser-runtime.json already exists; create a new run for new browser evidence")
 
@@ -1268,17 +1580,79 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
         "console_errors",
         "network",
         "raf",
-        "metrics",
         "lifecycle",
         "cross_runtime",
         "responsive_layout",
         "warnings",
         "unverified",
     }
+    linked_profile = draft.get("profile_observation_path") is not None
+    if not linked_profile:
+        draft_required.add("metrics")
     if not exact_keys(draft, BROWSER_DRAFT_KEYS, draft_required):
         raise ValueError("browser observation keys do not match browser-runtime-draft.v1")
     if draft.get("schema") != "3d-craft.browser-runtime-draft.v1":
         raise ValueError("browser observation has the wrong schema")
+
+    asset_binding = {
+        "sha256": sha256_file(glb_path),
+        "bytes": glb_path.stat().st_size,
+    }
+    profile_source: Path | None = None
+    profile_entry: dict[str, Any] | None = None
+    profile_observation: dict[str, Any] | None = None
+    if linked_profile:
+        profile_value = draft.get("profile_observation_path")
+        if not isinstance(profile_value, str) or not profile_value.strip():
+            raise ValueError("profile_observation_path must be a nonempty absolute path")
+        profile_source = Path(profile_value).expanduser()
+        if not profile_source.is_absolute():
+            raise ValueError("profile_observation_path must be absolute")
+        profile_source = profile_source.resolve(strict=True)
+        if not profile_source.is_file():
+            raise ValueError("profile_observation_path is not a file")
+        profile_observation = load_json(profile_source)
+        profile_errors = web_profile_observation_errors(profile_observation)
+        if profile_errors:
+            raise ValueError("; ".join(profile_errors))
+        if profile_observation.get("status") != "PASS":
+            raise ValueError(
+                "web profile observation did not pass: "
+                f"{profile_observation.get('reason', 'no reason supplied')}"
+            )
+        if (
+            "metrics" in draft
+            or "performance_profile" in draft
+            or "resource_stability" in as_object(draft.get("lifecycle"))
+        ):
+            raise ValueError(
+                "metrics, performance_profile, and lifecycle.resource_stability must be omitted "
+                "when profile_observation_path is used"
+            )
+        observed_asset = as_object(profile_observation.get("asset"))
+        if observed_asset.get("sha256") != asset_binding["sha256"]:
+            raise ValueError("web profile asset SHA-256 does not match the current asset.glb")
+        observed_url = observed_asset.get("url")
+        if draft.get("asset_url") is not None and draft.get("asset_url") != observed_url:
+            raise ValueError("browser draft asset_url does not match the web profile observation")
+        draft = dict(draft)
+        draft.pop("profile_observation_path", None)
+        draft.setdefault("asset_url", observed_url)
+        draft["metrics"] = profile_observation["metrics"]
+        draft["performance_profile"] = profile_observation["performance_profile"]
+        lifecycle = dict(as_object(draft.get("lifecycle")))
+        lifecycle["resource_stability"] = profile_observation["resource_stability"]
+        draft["lifecycle"] = lifecycle
+        profile_entry = {
+            "path": str(profile_path),
+            "sha256": sha256_file(profile_source),
+            "bytes": profile_source.stat().st_size,
+        }
+
+    merged_required = draft_required | {"metrics"}
+    merged_allowed = BROWSER_DRAFT_KEYS - {"profile_observation_path"}
+    if not exact_keys(draft, merged_allowed, merged_required):
+        raise ValueError("merged browser observation keys do not match browser-runtime-draft.v1")
 
     desktop_source: Path | None = None
     desktop_entry: dict[str, Any] | None = None
@@ -1301,10 +1675,6 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
     elif mobile_required and draft.get("status") == "ready":
         raise ValueError("the scene contract requires a mobile screenshot")
 
-    asset_binding = {
-        "sha256": sha256_file(glb_path),
-        "bytes": glb_path.stat().st_size,
-    }
     asset_url = draft.get("asset_url")
     if asset_url is not None:
         if not isinstance(asset_url, str) or not asset_url.strip():
@@ -1316,6 +1686,13 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
         or network.get("bytes") != asset_binding["bytes"]
     ):
         raise ValueError("browser network bytes and SHA-256 do not match the current asset.glb")
+    if profile_observation is not None and desktop_entry is not None:
+        page = as_object(profile_observation.get("page"))
+        if (
+            desktop_entry.get("css_viewport") != page.get("viewport")
+            or desktop_entry.get("device_pixel_ratio") != page.get("device_pixel_ratio")
+        ):
+            raise ValueError("desktop screenshot viewport or DPR does not match the web profile observation")
 
     if desktop_entry is not None:
         desktop_entry["path"] = str(desktop_path)
@@ -1324,7 +1701,13 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
     report = {
         key: value
         for key, value in draft.items()
-        if key not in {"schema", "asset_url", "desktop_screenshot", "mobile_screenshot"}
+        if key not in {
+            "schema",
+            "asset_url",
+            "profile_observation_path",
+            "desktop_screenshot",
+            "mobile_screenshot",
+        }
     }
     report.update(
         {
@@ -1337,6 +1720,8 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
         report["desktop_screenshot"] = desktop_entry
     if mobile_entry is not None:
         report["mobile_screenshot"] = mobile_entry
+    if profile_entry is not None:
+        report["profile_observation"] = profile_entry
     report_errors = browser_runtime_errors(report)
     if report_errors:
         raise ValueError("; ".join(report_errors))
@@ -1346,6 +1731,8 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
         destinations.append((desktop_source, desktop_path))
     if mobile_source is not None:
         destinations.append((mobile_source, mobile_path))
+    if profile_source is not None:
+        destinations.append((profile_source, profile_path))
     occupied = [str(destination) for _, destination in destinations if destination.exists()]
     if occupied:
         raise ValueError(f"browser evidence destination already exists: {', '.join(occupied)}")
@@ -1362,6 +1749,10 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
             mobile_entry, expected_path=mobile_path, root=run_dir / "evidence", require_bytes=True
         ):
             raise ValueError("copied mobile screenshot differs from the sealed manifest")
+        if profile_entry is not None and not verified_file_entry(
+            profile_entry, expected_path=profile_path, root=run_dir / "evidence", require_bytes=True
+        ):
+            raise ValueError("copied web profile observation differs from the sealed manifest")
         write_json_atomic(report_path, report)
         created.append(report_path)
         run["evidence"] = observed_evidence(run_dir)
@@ -1370,15 +1761,22 @@ def bind_browser_evidence(args: argparse.Namespace) -> dict[str, Any]:
         for path in reversed(created):
             path.unlink(missing_ok=True)
         raise
-    return {
+    result = {
         "schema": "3d-craft.bind-browser-evidence.v1",
         "command": "bind-browser-evidence",
         "status": "pass",
         "run_dir": str(run_dir),
         "report": str(report_path),
         "asset_sha256": asset_binding["sha256"],
-        "screenshots": [str(destination) for _, destination in destinations],
+        "screenshots": [
+            str(path)
+            for path in (desktop_path, mobile_path)
+            if path in {destination for _, destination in destinations}
+        ],
     }
+    if profile_entry is not None:
+        result["profile_observation"] = str(profile_path)
+    return result
 
 
 def init_visual_review(args: argparse.Namespace) -> dict[str, Any]:
@@ -1709,7 +2107,46 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             gltf_note = "GLB validity, semantic identity, candidate binding, or approved asset budgets are missing or failing."
         gate_results["gltf"] = gate("gltf", gltf_status, ["evidence/gltf-validation.json"] if gltf else [], gltf_note)
 
-    browser_contract_ok = bool(browser and not browser_runtime_errors(browser))
+    profile_binding = (browser or {}).get("profile_observation")
+    profile_binding_path = (
+        verified_entry_path(profile_binding, root=run_dir / "evidence", require_bytes=True)
+        if profile_binding is not None
+        else None
+    )
+    profile_binding_ok = profile_binding is None or bool(
+        profile_binding_path == (run_dir / "evidence" / "browser-profile-observation.json").resolve()
+    )
+    if profile_binding is not None and profile_binding_ok:
+        observation = load_json(profile_binding_path)
+        profile_desktop = as_object(browser.get("desktop_screenshot"))
+        profile_binding_ok = bool(
+            observation
+            and not web_profile_observation_errors(observation)
+            and observation.get("status") == "PASS"
+            and observation.get("asset") == {
+                "url": as_object(browser.get("asset")).get("url"),
+                "sha256": as_object(browser.get("asset")).get("sha256"),
+            }
+            and observation.get("metrics") == browser.get("metrics")
+            and observation.get("performance_profile") == browser.get("performance_profile")
+            and observation.get("resource_stability") == as_object(browser.get("lifecycle")).get("resource_stability")
+            and observation.get("page") == {
+                "viewport": profile_desktop.get("css_viewport"),
+                "device_pixel_ratio": profile_desktop.get("device_pixel_ratio"),
+                "visibility_state": as_object(profile_desktop.get("provenance")).get("visibility_state"),
+            }
+        )
+    if not profile_binding_ok:
+        issues.append({
+            "severity": "P1",
+            "gate": "web_runtime",
+            "message": "Linked profile evidence is missing, invalid, or inconsistent with the browser report.",
+        })
+    browser_contract_ok = bool(
+        browser
+        and not browser_runtime_errors(browser)
+        and profile_binding_ok
+    )
     browser_asset = as_object((browser or {}).get("asset"))
     browser_network = as_object((browser or {}).get("network"))
     browser_asset_ok = bool(
@@ -1745,6 +2182,8 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         and desktop_screenshot.get("visual_review") == "PASS"
     )
     browser_artifact_paths: list[Path] = [desktop_screenshot_path] if desktop_screenshot_path else []
+    if profile_binding_path:
+        browser_artifact_paths.append(profile_binding_path)
     cross_budgets = approved_budgets(scene, ("required_node_coverage_percent", "bbox_drift_percent"))
     if "cross_runtime" in required_gates:
         cross_metrics = as_object((browser or {}).get("cross_runtime"))
@@ -1787,12 +2226,55 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             cross_note,
         )
 
+    performance_profile_evidenced = False
     if "web_runtime" in required_gates:
         web_metrics = as_object((browser or {}).get("metrics"))
         web_budgets = approved_budgets(scene, ("draw_calls", "textures", "frame_p95_ms"))
         lifecycle = as_object((browser or {}).get("lifecycle"))
         context_loss = as_object(lifecycle.get("context_loss"))
         context_loss_failed = context_loss.get("test_status") == "FAIL"
+        performance_profile = as_object((browser or {}).get("performance_profile"))
+        resource_stability = as_object(lifecycle.get("resource_stability"))
+        performance_budget = (
+            as_object(as_object(scene_object.get("budgets")).get("performance_profile"))
+            if as_object(scene_object.get("budgets")).get("status") == "approved"
+            else {}
+        )
+        performance_profile_required = bool(performance_budget)
+        performance_profile_failed = performance_profile.get("test_status") == "FAIL"
+        resource_stability_failed = resource_stability.get("test_status") == "FAIL"
+        performance_profile_evidenced = bool(
+            performance_profile.get("test_status") == "PASS"
+            and resource_stability.get("test_status") == "PASS"
+        )
+        performance_profile_missing = bool(
+            performance_profile_required
+            and (
+                performance_profile.get("test_status") in {None, "UNVERIFIED"}
+                or resource_stability.get("test_status") in {None, "UNVERIFIED"}
+            )
+        )
+        performance_profile_budget_ok = bool(
+            not performance_profile_required
+            or (
+                performance_profile_evidenced
+                and performance_profile.get("viewport") == performance_budget.get("viewport")
+                and performance_profile.get("device_pixel_ratio") == performance_budget.get("device_pixel_ratio")
+                and is_number(performance_profile.get("warmup_ms"))
+                and performance_profile["warmup_ms"] >= performance_budget.get("warmup_ms", math.inf)
+                and is_number(performance_profile.get("sample_ms"))
+                and performance_profile["sample_ms"] >= performance_budget.get("sample_ms", math.inf)
+                and isinstance(resource_stability.get("cycles"), int)
+                and not isinstance(resource_stability.get("cycles"), bool)
+                and resource_stability["cycles"] >= performance_budget.get("resource_reload_cycles", math.inf)
+                and isinstance(resource_stability.get("geometry_delta"), int)
+                and not isinstance(resource_stability.get("geometry_delta"), bool)
+                and resource_stability["geometry_delta"] <= performance_budget.get("max_geometry_delta", -math.inf)
+                and isinstance(resource_stability.get("texture_delta"), int)
+                and not isinstance(resource_stability.get("texture_delta"), bool)
+                and resource_stability["texture_delta"] <= performance_budget.get("max_texture_delta", -math.inf)
+            )
+        )
         target_devices_value = as_object(scene_object.get("runtime")).get("target_devices")
         target_devices = target_devices_value if isinstance(target_devices_value, list) else []
         mobile_required = "mobile" in target_devices
@@ -1830,6 +2312,8 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             and lifecycle.get("remount_test_status") == "PASS"
             and lifecycle.get("ready_after_clean_reload") is True
             and not context_loss_failed
+            and not performance_profile_failed
+            and not resource_stability_failed
             and mobile_ok
         )
         draw_calls = web_metrics.get("draw_calls")
@@ -1843,6 +2327,7 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             and draw_calls <= web_budgets["draw_calls"]
             and texture_count <= web_budgets["textures"]
             and frame_p95_ms <= web_budgets["frame_p95_ms"]
+            and performance_profile_budget_ok
         )
         if browser_blocked:
             web_status = "BLOCKED"
@@ -1850,13 +2335,21 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             web_status = "PASS"
         elif not browser:
             web_status = "UNVERIFIED"
+        elif web_core_ok and performance_profile_missing:
+            web_status = "UNVERIFIED"
         elif web_core_ok and web_budgets is None:
             web_status = "UNVERIFIED"
         else:
             web_status = "FAIL"
         web_note = "browser67 runtime, lifecycle, responsive evidence, and approved desktop budgets passed."
+        if web_status == "PASS" and performance_profile_required:
+            web_note = "browser67 bounded performance, resource stability, lifecycle, responsive evidence, and approved desktop budgets passed."
         if web_status == "PASS" and context_loss.get("test_status") == "PASS":
-            web_note = "browser67 runtime, context-loss recovery, lifecycle, responsive evidence, and approved desktop budgets passed."
+            web_note = (
+                "browser67 bounded performance, resource stability, context-loss recovery, lifecycle, responsive evidence, and approved desktop budgets passed."
+                if performance_profile_required
+                else "browser67 runtime, context-loss recovery, lifecycle, responsive evidence, and approved desktop budgets passed."
+            )
         if web_status == "BLOCKED":
             web_note = f"Browser evidence is blocked: {browser.get('blocker', 'unspecified prerequisite')}."
         elif web_status != "PASS":
@@ -1931,7 +2424,13 @@ def validate_run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             evidenced_capabilities.add("browser.console.read")
         if browser_base_ok and as_object(browser.get("network")).get("status") in {"PASS", "FAIL"}:
             evidenced_capabilities.add("browser.network.read")
-        if browser_base_ok and all(name in as_object(browser.get("metrics")) for name in ("draw_calls", "textures", "frame_p95_ms")):
+        if browser_base_ok and (
+            performance_profile_evidenced
+            or (
+                not as_object(as_object(scene_object.get("budgets")).get("performance_profile"))
+                and all(name in as_object(browser.get("metrics")) for name in ("draw_calls", "textures", "frame_p95_ms"))
+            )
+        ):
             evidenced_capabilities.add("browser.performance.profile")
         if browser_base_ok and desktop_screenshot_ok:
             evidenced_capabilities.add("browser.capture")

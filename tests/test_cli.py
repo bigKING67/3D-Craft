@@ -47,6 +47,74 @@ class ThreeDCraftCliTests(unittest.TestCase):
             + struct.pack(">II", width, height)
         )
 
+    @staticmethod
+    def performance_profile() -> dict:
+        return {
+            "test_status": "PASS",
+            "source": "viewer-observability",
+            "warmup_ms": 3000,
+            "sample_ms": 10000,
+            "started_at_ms": 100,
+            "sample_started_at_ms": 3100,
+            "completed_at_ms": 13100,
+            "sample_count": 600,
+            "viewport": [1440, 900],
+            "device_pixel_ratio": 1,
+            "visibility_state": "visible",
+            "frame_p50_ms": 7,
+            "frame_p95_ms": 8,
+            "renderer_peak": {
+                "draw_calls": 1,
+                "triangles": 3,
+                "geometries": 2,
+                "textures": 0,
+            },
+        }
+
+    @staticmethod
+    def resource_stability(*, geometry_delta: int = 0, texture_delta: int = 0) -> dict:
+        samples = [
+            {
+                "mounts": cycle + 1,
+                "disposes": cycle * 2,
+                "geometries": 2 + (geometry_delta if cycle == 3 else 0),
+                "textures": texture_delta if cycle == 3 else 0,
+                "captured_at_ms": 14000 + cycle * 1000,
+            }
+            for cycle in range(4)
+        ]
+        return {
+            "test_status": "PASS",
+            "source": "viewer-observability",
+            "cycles": 3,
+            "samples": samples,
+            "geometry_delta": geometry_delta,
+            "texture_delta": texture_delta,
+        }
+
+    def profile_observation(self, glb: Path) -> dict:
+        glb_hash = hashlib.sha256(glb.read_bytes()).hexdigest()
+        profile = self.performance_profile()
+        renderer = profile["renderer_peak"]
+        return {
+            "schema": "3d-craft.web-profile-observation.v1",
+            "status": "PASS",
+            "source": "viewer-observability",
+            "asset": {"url": "/asset.glb", "sha256": glb_hash},
+            "page": {
+                "visibility_state": "visible",
+                "viewport": [1440, 900],
+                "device_pixel_ratio": 1,
+            },
+            "metrics": {
+                **renderer,
+                "frame_p50_ms": profile["frame_p50_ms"],
+                "frame_p95_ms": profile["frame_p95_ms"],
+            },
+            "performance_profile": profile,
+            "resource_stability": self.resource_stability(),
+        }
+
     def browser_draft(
         self,
         *,
@@ -69,7 +137,15 @@ class ThreeDCraftCliTests(unittest.TestCase):
                 "sha256": network_sha256 or glb_hash,
             },
             "raf": {"delta": 10},
-            "metrics": {"draw_calls": 1, "textures": 0, "frame_p95_ms": 8},
+            "metrics": {
+                "draw_calls": 1,
+                "textures": 0,
+                "frame_p50_ms": 7,
+                "frame_p95_ms": 8,
+                "geometries": 2,
+                "triangles": 3,
+            },
+            "performance_profile": self.performance_profile(),
             "lifecycle": {
                 "remount_test_status": "PASS",
                 "ready_after_clean_reload": True,
@@ -81,6 +157,7 @@ class ThreeDCraftCliTests(unittest.TestCase):
                     "ready_after_restore": True,
                     "raf_resumed_after_restore": True,
                 },
+                "resource_stability": self.resource_stability(),
             },
             "cross_runtime": {"required_node_coverage_percent": 100, "bbox_drift_percent": 0.1},
             "desktop_screenshot": {
@@ -176,6 +253,15 @@ class ThreeDCraftCliTests(unittest.TestCase):
                 "draw_calls": 10,
                 "textures": 4,
                 "frame_p95_ms": 20,
+                "performance_profile": {
+                    "viewport": [1440, 900],
+                    "device_pixel_ratio": 1,
+                    "warmup_ms": 3000,
+                    "sample_ms": 10000,
+                    "resource_reload_cycles": 3,
+                    "max_geometry_delta": 0,
+                    "max_texture_delta": 0,
+                },
                 "required_node_coverage_percent": 100,
                 "bbox_drift_percent": 0.5,
             },
@@ -323,7 +409,15 @@ class ThreeDCraftCliTests(unittest.TestCase):
                     "asset": {"sha256": glb_entry["sha256"], "bytes": glb_entry["bytes"]},
                     "network": {"status": "PASS", "bytes": glb_entry["bytes"], "sha256": glb_entry["sha256"]},
                     "raf": {"delta": 10},
-                    "metrics": {"draw_calls": 1, "textures": 0, "frame_p95_ms": 8},
+                    "metrics": {
+                        "draw_calls": 1,
+                        "textures": 0,
+                        "frame_p50_ms": 7,
+                        "frame_p95_ms": 8,
+                        "geometries": 2,
+                        "triangles": 3,
+                    },
+                    "performance_profile": self.performance_profile(),
                     "lifecycle": {
                         "remount_test_status": "PASS",
                         "ready_after_clean_reload": True,
@@ -335,6 +429,7 @@ class ThreeDCraftCliTests(unittest.TestCase):
                             "ready_after_restore": True,
                             "raf_resumed_after_restore": True,
                         },
+                        "resource_stability": self.resource_stability(),
                     },
                     "cross_runtime": {"required_node_coverage_percent": 100, "bbox_drift_percent": 0.1},
                     "desktop_screenshot": desktop,
@@ -643,6 +738,8 @@ class ThreeDCraftCliTests(unittest.TestCase):
             self.assertEqual(report["mobile_screenshot"]["dimensions"], [390, 1269])
             self.assertEqual(report["desktop_screenshot"]["path"], str(desktop_copy.resolve()))
             self.assertEqual(report["lifecycle"]["context_loss"]["test_status"], "PASS")
+            self.assertEqual(report["performance_profile"]["source"], "viewer-observability")
+            self.assertEqual(report["lifecycle"]["resource_stability"]["cycles"], 3)
             self.assertEqual(desktop_copy.read_bytes(), desktop_source.read_bytes())
             self.assertEqual(mobile_copy.read_bytes(), mobile_source.read_bytes())
             self.assertEqual(self.run_cli("validate", "--run-dir", str(run_dir))["status"], "PASS")
@@ -665,6 +762,161 @@ class ThreeDCraftCliTests(unittest.TestCase):
             self.assertEqual(repeated.returncode, 2)
             self.assertIn("already exists", repeated.stderr)
             self.assertEqual(report_path.read_bytes(), before)
+
+    def test_bind_browser_evidence_merges_and_seals_a_viewer_profile_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            fixture = self.create_valid_run(run_dir)
+            for path in (
+                run_dir / "evidence" / "browser-runtime.json",
+                run_dir / "evidence" / "browser-desktop.png",
+                run_dir / "evidence" / "browser-mobile.png",
+            ):
+                path.unlink()
+            desktop_source = run_dir / "source" / "browser67-desktop.png"
+            mobile_source = run_dir / "source" / "browser67-mobile.png"
+            self.write_png_header(desktop_source, 1440, 900)
+            self.write_png_header(mobile_source, 390, 1269)
+            profile_source = run_dir / "source" / "web-profile-observation.json"
+            self.write_json(profile_source, self.profile_observation(fixture["glb"]))
+            draft = self.browser_draft(
+                glb=fixture["glb"],
+                desktop=desktop_source,
+                mobile=mobile_source,
+            )
+            draft.pop("metrics")
+            draft.pop("performance_profile")
+            draft["lifecycle"].pop("resource_stability")
+            draft["profile_observation_path"] = str(profile_source)
+            draft_path = run_dir / "source" / "browser-observation.json"
+            self.write_json(draft_path, draft)
+
+            payload = self.run_cli(
+                "bind-browser-evidence",
+                "--run-dir",
+                str(run_dir),
+                "--observation",
+                str(draft_path),
+            )
+
+            report = json.loads((run_dir / "evidence" / "browser-runtime.json").read_text())
+            sealed_profile = run_dir / "evidence" / "browser-profile-observation.json"
+            self.assertEqual(payload["profile_observation"], str(sealed_profile.resolve()))
+            self.assertEqual(report["metrics"], self.profile_observation(fixture["glb"])["metrics"])
+            self.assertEqual(report["performance_profile"]["test_status"], "PASS")
+            self.assertEqual(report["lifecycle"]["resource_stability"]["cycles"], 3)
+            self.assertEqual(report["profile_observation"]["path"], str(sealed_profile.resolve()))
+            self.assertEqual(report["profile_observation"]["sha256"], hashlib.sha256(profile_source.read_bytes()).hexdigest())
+            self.assertEqual(sealed_profile.read_bytes(), profile_source.read_bytes())
+            run = json.loads((run_dir / "run.json").read_text())
+            self.assertIn(
+                {"kind": "browser-profile-observation", "path": "evidence/browser-profile-observation.json"},
+                run["evidence"],
+            )
+            self.assertEqual(self.run_cli("validate", "--run-dir", str(run_dir))["status"], "PASS")
+            original_report = json.dumps(report)
+            sealed_bytes = sealed_profile.read_bytes()
+            for case in ("metrics", "timing", "resources", "asset-url"):
+                with self.subTest(report_drift=case):
+                    changed = json.loads(original_report)
+                    if case == "metrics":
+                        changed["metrics"]["frame_p95_ms"] = 7.5
+                        changed["performance_profile"]["frame_p95_ms"] = 7.5
+                    elif case == "timing":
+                        changed["performance_profile"]["completed_at_ms"] += 100
+                    elif case == "resources":
+                        changed["lifecycle"]["resource_stability"]["samples"][-1]["captured_at_ms"] += 100
+                    else:
+                        changed["asset"]["url"] = "/different-asset.glb"
+                    self.write_json(run_dir / "evidence" / "browser-runtime.json", changed)
+                    validation = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+                    self.assertEqual({g["id"]: g["status"] for g in validation["gates"]}["web_runtime"], "FAIL")
+                    self.assertEqual(sealed_profile.read_bytes(), sealed_bytes)
+            for case in ("malformed", "failed", "page-drift"):
+                with self.subTest(sealed_content=case):
+                    observation = json.loads(sealed_bytes)
+                    if case == "malformed":
+                        observation = {}
+                    elif case == "failed":
+                        observation = {
+                            "schema": "3d-craft.web-profile-observation.v1",
+                            "source": "viewer-observability",
+                            "status": "FAIL",
+                            "reason": "interrupted observation",
+                        }
+                    else:
+                        observation["page"]["viewport"] = [800, 600]
+                        observation["performance_profile"]["viewport"] = [800, 600]
+                    self.write_json(sealed_profile, observation)
+                    changed = json.loads(original_report)
+                    changed["profile_observation"] = self.file_entry(sealed_profile)
+                    self.write_json(run_dir / "evidence" / "browser-runtime.json", changed)
+                    validation = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+                    self.assertEqual({g["id"]: g["status"] for g in validation["gates"]}["web_runtime"], "FAIL")
+            sealed_profile.write_bytes(sealed_bytes)
+            self.write_json(run_dir / "evidence" / "browser-runtime.json", report)
+            sealed_profile.write_text("{}\n", encoding="utf-8")
+            validation = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+            by_gate = {item["id"]: item["status"] for item in validation["gates"]}
+            self.assertEqual(by_gate["web_runtime"], "FAIL")
+
+    def test_linked_viewer_profile_rejects_mismatch_and_dual_authority_atomically(self) -> None:
+        cases = ("asset-mismatch", "nested-failure", "dual-authority")
+        for name in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                run_dir = Path(directory)
+                fixture = self.create_valid_run(run_dir)
+                for path in (
+                    run_dir / "evidence" / "browser-runtime.json",
+                    run_dir / "evidence" / "browser-desktop.png",
+                    run_dir / "evidence" / "browser-mobile.png",
+                ):
+                    path.unlink()
+                desktop = run_dir / "source" / "browser67-desktop.png"
+                mobile = run_dir / "source" / "browser67-mobile.png"
+                self.write_png_header(desktop, 1440, 900)
+                self.write_png_header(mobile, 390, 1269)
+                profile = self.profile_observation(fixture["glb"])
+                if name == "asset-mismatch":
+                    profile["asset"]["sha256"] = "0" * 64
+                elif name == "nested-failure":
+                    profile["resource_stability"] = {
+                        "test_status": "FAIL",
+                        "reason": "resource counters did not settle",
+                    }
+                profile_path = run_dir / "source" / "web-profile-observation.json"
+                self.write_json(profile_path, profile)
+                draft = self.browser_draft(glb=fixture["glb"], desktop=desktop, mobile=mobile)
+                draft["profile_observation_path"] = str(profile_path)
+                if name != "dual-authority":
+                    draft.pop("metrics")
+                    draft.pop("performance_profile")
+                    draft["lifecycle"].pop("resource_stability")
+                draft_path = run_dir / "source" / "browser-observation.json"
+                self.write_json(draft_path, draft)
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(CLI),
+                        "bind-browser-evidence",
+                        "--run-dir",
+                        str(run_dir),
+                        "--observation",
+                        str(draft_path),
+                        "--json",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                expected = {
+                    "asset-mismatch": "does not match",
+                    "nested-failure": "must contain passing nested observations",
+                    "dual-authority": "must be omitted",
+                }[name]
+                self.assertIn(expected, result.stderr)
+                self.assertFalse((run_dir / "evidence" / "browser-runtime.json").exists())
+                self.assertFalse((run_dir / "evidence" / "browser-profile-observation.json").exists())
 
     def test_bind_browser_evidence_rejects_invalid_or_mismatched_samples_atomically(self) -> None:
         cases = (
@@ -801,6 +1053,103 @@ class ThreeDCraftCliTests(unittest.TestCase):
             payload = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
             by_gate = {item["id"]: item["status"] for item in payload["gates"]}
             self.assertEqual(by_gate["web_runtime"], "FAIL")
+
+    def test_bind_browser_evidence_rejects_forged_performance_profiles(self) -> None:
+        mutations = (
+            (
+                "short-window",
+                lambda draft: draft["performance_profile"].update({"completed_at_ms": 13099}),
+                "performance profile",
+            ),
+            (
+                "summary-mismatch",
+                lambda draft: draft["metrics"].update({"frame_p95_ms": 9}),
+                "do not match",
+            ),
+            (
+                "resource-delta-mismatch",
+                lambda draft: draft["lifecycle"]["resource_stability"].update({"geometry_delta": 1}),
+                "deltas do not match",
+            ),
+        )
+        for name, mutate, expected_error in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                run_dir = Path(directory)
+                fixture = self.create_valid_run(run_dir)
+                for path in (
+                    run_dir / "evidence" / "browser-runtime.json",
+                    run_dir / "evidence" / "browser-desktop.png",
+                    run_dir / "evidence" / "browser-mobile.png",
+                ):
+                    path.unlink()
+                desktop = run_dir / "source" / "browser67-desktop.png"
+                mobile = run_dir / "source" / "browser67-mobile.png"
+                self.write_png_header(desktop, 1440, 900)
+                self.write_png_header(mobile, 390, 1269)
+                draft = self.browser_draft(glb=fixture["glb"], desktop=desktop, mobile=mobile)
+                mutate(draft)
+                draft_path = run_dir / "source" / "browser-observation.json"
+                self.write_json(draft_path, draft)
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(CLI),
+                        "bind-browser-evidence",
+                        "--run-dir",
+                        str(run_dir),
+                        "--observation",
+                        str(draft_path),
+                        "--json",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(expected_error, result.stderr)
+                self.assertFalse((run_dir / "evidence" / "browser-runtime.json").exists())
+
+    def test_performance_profile_budget_and_legacy_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            self.create_valid_run(run_dir)
+            report_path = run_dir / "evidence" / "browser-runtime.json"
+            report = json.loads(report_path.read_text())
+            report["lifecycle"]["resource_stability"] = self.resource_stability(geometry_delta=1)
+            self.write_json(report_path, report)
+            payload = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+            by_gate = {item["id"]: item["status"] for item in payload["gates"]}
+            self.assertEqual(by_gate["web_runtime"], "FAIL")
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            self.create_valid_run(run_dir)
+            report_path = run_dir / "evidence" / "browser-runtime.json"
+            report = json.loads(report_path.read_text())
+            report.pop("performance_profile")
+            report["lifecycle"].pop("resource_stability")
+            self.write_json(report_path, report)
+            payload = self.run_cli("validate", "--run-dir", str(run_dir), expected=2)
+            by_gate = {item["id"]: item["status"] for item in payload["gates"]}
+            self.assertEqual(by_gate["web_runtime"], "UNVERIFIED")
+
+            scene_path = run_dir / "scene.json"
+            scene = json.loads(scene_path.read_text())
+            scene["budgets"].pop("performance_profile")
+            self.write_json(scene_path, scene)
+            scene_sha256 = hashlib.sha256(scene_path.read_bytes()).hexdigest()
+            run_path = run_dir / "run.json"
+            run = json.loads(run_path.read_text())
+            run["input_hashes"]["scene_contract"] = scene_sha256
+            self.write_json(run_path, run)
+            render_path = run_dir / "evidence" / "render-evidence.json"
+            render = json.loads(render_path.read_text())
+            render["scene_contract"]["sha256"] = scene_sha256
+            self.write_json(render_path, render)
+            review_path = run_dir / "evidence" / "visual-review.json"
+            review = json.loads(review_path.read_text())
+            review["candidate"]["render_evidence_sha256"] = hashlib.sha256(render_path.read_bytes()).hexdigest()
+            self.write_json(review_path, review)
+            self.assertEqual(self.run_cli("validate", "--run-dir", str(run_dir))["status"], "PASS")
 
     def test_gltf_gate_fails_when_report_targets_another_asset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

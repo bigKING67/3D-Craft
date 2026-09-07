@@ -68,6 +68,37 @@
         "draw_calls": {"type": ["integer", "null"], "minimum": 0},
         "textures": {"type": ["integer", "null"], "minimum": 0},
         "frame_p95_ms": {"type": ["number", "null"], "minimum": 0},
+        "performance_profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "viewport",
+            "device_pixel_ratio",
+            "warmup_ms",
+            "sample_ms",
+            "resource_reload_cycles",
+            "max_geometry_delta",
+            "max_texture_delta"
+          ],
+          "properties": {
+            "viewport": {
+              "type": "array",
+              "prefixItems": [
+                {"type": "integer", "minimum": 1},
+                {"type": "integer", "minimum": 1}
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "device_pixel_ratio": {"type": "number", "exclusiveMinimum": 0},
+            "warmup_ms": {"type": "integer", "minimum": 0},
+            "sample_ms": {"type": "integer", "exclusiveMinimum": 0},
+            "resource_reload_cycles": {"type": "integer", "minimum": 3},
+            "max_geometry_delta": {"type": "integer", "minimum": 0},
+            "max_texture_delta": {"type": "integer", "minimum": 0}
+          }
+        },
         "required_node_coverage_percent": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
         "bbox_drift_percent": {"type": ["number", "null"], "minimum": 0}
       }

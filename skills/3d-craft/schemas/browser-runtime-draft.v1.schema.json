@@ -10,7 +10,6 @@
     "console_errors",
     "network",
     "raf",
-    "metrics",
     "lifecycle",
     "cross_runtime",
     "responsive_layout",
@@ -32,6 +31,8 @@
     "network": {"$ref": "browser-runtime.v1.schema.json#/properties/network"},
     "raf": {"$ref": "browser-runtime.v1.schema.json#/properties/raf"},
     "metrics": {"$ref": "browser-runtime.v1.schema.json#/properties/metrics"},
+    "performance_profile": {"$ref": "browser-runtime.v1.schema.json#/properties/performance_profile"},
+    "profile_observation_path": {"type": "string", "minLength": 1},
     "lifecycle": {"$ref": "browser-runtime.v1.schema.json#/properties/lifecycle"},
     "cross_runtime": {"$ref": "browser-runtime.v1.schema.json#/properties/cross_runtime"},
     "desktop_screenshot": {"$ref": "#/$defs/screenshotDraft"},
@@ -44,6 +45,43 @@
     "unverified": {"$ref": "browser-runtime.v1.schema.json#/properties/unverified"}
   },
   "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {"metrics": {}},
+          "required": ["metrics"],
+          "not": {
+            "properties": {"profile_observation_path": {}},
+            "required": ["profile_observation_path"]
+          }
+        },
+        {
+          "properties": {
+            "profile_observation_path": {},
+            "lifecycle": {
+              "not": {
+                "type": "object",
+                "properties": {"resource_stability": {}},
+                "required": ["resource_stability"]
+              }
+            }
+          },
+          "required": ["profile_observation_path"],
+          "not": {
+            "anyOf": [
+              {
+                "properties": {"metrics": {}},
+                "required": ["metrics"]
+              },
+              {
+                "properties": {"performance_profile": {}},
+                "required": ["performance_profile"]
+              }
+            ]
+          }
+        }
+      ]
+    },
     {
       "if": {"properties": {"status": {"const": "ready"}}, "required": ["status"]},
       "then": {

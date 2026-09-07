@@ -46,9 +46,98 @@ coverage from counts alone. A stale screenshot or DOM/3D disagreement is
   preserves scene identity;
 - reduced motion removes nonessential automatic drift;
 - desktop 1440x900 and mobile 390x844 layout are usable;
-- desktop warmup/sample performance meets the approved fixture budget.
+- desktop performance comes from an explicit warmup/sample window and meets
+  the approved fixture budget;
+- at least three sequential asset reloads in the same renderer stay within the
+  approved geometry and texture deltas.
 
 Mobile viewport testing proves layout only. It is not mobile GPU evidence.
+
+## Explicit performance profile
+
+Do not treat the rolling values in `snapshot.raf` as a performance test. They
+are a diagnostic tail and may mix loading, hidden-tab, resize, context-restore,
+and steady-state frames. A strict profile uses the development/test-only
+observability control path. After the approved viewport is established and the
+Viewer is visibly `ready`, prefer the single bounded control call:
+
+```js
+await window.__THREE_D_CRAFT_TEST__.runPerformanceAndResourceProfile({
+  resource_cycles: 3,
+  timeout_ms: 60000,
+})
+```
+
+The returned object uses schema `3d-craft.web-profile-observation.v1`. A
+passing result already contains receipt-shaped metrics, the explicit
+performance profile, resource samples, asset identity, and page identity.
+Serialize that exact result to an external JSON file; do not recalculate or
+transcribe its fields. A failed result contains a reason and is not eligible
+for binding. Preserve it as diagnostic evidence and fix the stated cause
+before starting a deliberate new observation.
+
+The browser adapter must establish and verify the approved viewport and DPR
+before calling the control. The control observes the actual page dimensions;
+it does not set browser emulation or select the scene's approved budget.
+
+With browser67, a screenshot viewport override ends when that capture returns.
+Do not set it in one call and assume a later profile call inherits it. Use one
+bounded, exact-tab debugger batch for `Emulation.setDeviceMetricsOverride`,
+`Page.getLayoutMetrics`, a `Runtime.evaluate` page-metrics/readiness check,
+the profile invocation with `awaitPromise: true`, and
+`Emulation.clearDeviceMetricsOverride`. The adapter must verify batch success,
+JavaScript exception details, the returned observation's viewport/DPR, and
+viewport cleanup/debugger release before accepting the result. A timeout or
+partial batch is diagnostic evidence only. Preserve browser67's cleanup on
+failure; never request persistent emulation. Capture subsequent PNG evidence
+with its own atomic transaction at the same approved viewport/DPR and verify
+its page identity and dimensions before binding.
+
+The control performs this sequence after the adapter's viewport check:
+
+1. record the actual page viewport and device pixel ratio;
+2. require `document.visibilityState === "visible"` and viewer `status: ready`;
+3. run the explicit warmup/sample profile;
+4. capture a settled resource baseline;
+5. perform at least three sequential GLB-subtree reloads in the same renderer;
+6. return one immutable observation only after all steps complete.
+
+The bundled profile freezes the actual page viewport from
+`window.innerWidth/window.innerHeight`, warms up for 3,000 ms, then samples for
+at least 10,000 ms. It becomes `invalid` if visibility, viewer readiness,
+viewport, or DPR changes during that interval. Preserve the reason and use
+`test_status: FAIL` or `UNVERIFIED`; do not silently restart until one run looks
+good. Map viewer `renderer_peak.calls` to receipt
+`renderer_peak.draw_calls`. The receipt's top-level `metrics` must exactly
+match the passing profile so an unrelated rolling counter cannot be presented
+as the approved result.
+
+For resource stability, the control keeps the same Canvas and WebGLRenderer
+alive:
+
+1. when the initial asset is settled, dispatch
+   `3d-craft:test-resource-samples-reset` and wait for the baseline sample;
+2. dispatch `3d-craft:test-remount` once and wait for one additional mount,
+   at least one additional disposal, `status: ready`, and the next settled
+   sample;
+3. repeat sequentially until at least three reload cycles and four samples
+   exist;
+4. report `geometry_delta` and `texture_delta` as the final settled sample
+   minus the baseline.
+
+The development viewer remount event reloads only the owned GLB subtree; it
+does not replace the Canvas or renderer. React StrictMode may clean up more
+than one development effect during a cycle, so disposal is a lower-bound
+invariant rather than an exact count. A missing sample, skipped cleanup,
+nonsequential mount count, recreated renderer, or unexplained positive delta is
+not a passing resource-stability observation.
+
+When an approved scene contract contains `budgets.performance_profile`, both a
+passing explicit profile and passing resource-stability observation are
+required for `web_runtime` and `browser.performance.profile`. Missing evidence
+is `UNVERIFIED`; malformed, failed, mismatched, or over-budget evidence is
+`FAIL`. Old V0.1 scenes without this nested budget remain readable, but their
+legacy rolling metrics do not establish the strict profile described here.
 
 ### Pinned V0.1 timing warning
 
@@ -69,8 +158,13 @@ capability in `blocker`, and preserve the successful partial observations. Do
 not substitute a stale or unreviewed screenshot; validation propagates the
 blocked state to browser gates while retaining evidence-backed capabilities.
 
-The bundled development viewer accepts a `3d-craft:test-remount` DOM event for
-test orchestration. It also accepts `3d-craft:test-context-loss` and
+The bundled development viewer exposes `window.__THREE_D_CRAFT_TEST__` as a
+separate control surface; it never mutates the frozen
+`window.__THREE_D_CRAFT__` snapshot. Low-level diagnosis may still dispatch
+`3d-craft:test-performance-start`, `3d-craft:test-resource-samples-reset`, and
+`3d-craft:test-remount`, but the linked observation path should use the bounded
+control to avoid manual wait and calculation drift. The Viewer also accepts
+`3d-craft:test-context-loss` and
 `3d-craft:test-context-restore`; these call Three.js's real
 `WEBGL_lose_context` path rather than simulating a CSS-only state. These events
 and the browser-exposed observability snapshot are registered only in Vite
@@ -104,7 +198,14 @@ python3 scripts/3d_craft.py bind-browser-evidence \
 The draft uses schema name `3d-craft.browser-runtime-draft.v1`. It contains
 observed runtime facts, not a second candidate manifest. Do not include
 `runtime`, `asset`, destination paths, screenshot hashes, byte counts, or PNG
-dimensions: the command derives those facts. A minimal ready draft is:
+dimensions: the command derives those facts. When strict profiling ran, set
+`profile_observation_path` to the absolute path of the exact Viewer result and
+omit `metrics`, `performance_profile`, and
+`lifecycle.resource_stability`. The binder validates the linked observation,
+checks its asset SHA-256 and desktop viewport/DPR, merges its fields, and seals
+an exact run-owned copy at `evidence/browser-profile-observation.json`.
+
+A minimal ready draft using the linked profile is:
 
 ```json
 {
@@ -118,7 +219,7 @@ dimensions: the command derives those facts. A minimal ready draft is:
     "sha256": "replace-with-the-observed-served-glb-sha256"
   },
   "raf": {"delta": 60},
-  "metrics": {"draw_calls": 12, "textures": 2, "frame_p95_ms": 14.5},
+  "profile_observation_path": "/absolute/web-profile-observation.json",
   "lifecycle": {
     "remount_test_status": "PASS",
     "ready_after_clean_reload": true,
@@ -168,9 +269,21 @@ dimensions: the command derives those facts. A minimal ready draft is:
 Replace the example bytes and SHA-256 with the values observed from the actual
 network response. The command fails closed if those values differ from the
 current run's `asset.glb`, if visibility is not `visible`, or if PNG dimensions
-contradict the stated CSS viewport and DPR. It refuses to overwrite any sealed
-report or screenshot. On success, accepted screenshots live in run-owned
-`evidence/`; browser67 cache paths remain provenance only.
+contradict the stated CSS viewport and DPR. It also rejects a failed or
+malformed linked profile, conflicting inline profile fields, forged sampling
+windows, top-level metrics that differ from the explicit profile, and resource
+deltas that do not match the sequential samples. It refuses to overwrite any
+sealed report, linked observation, or screenshot. On success, accepted
+screenshots and the linked profile live in run-owned `evidence/`; browser67
+cache paths remain provenance only. Legacy drafts may still provide the three
+profile fields inline, but must not combine inline and linked authority.
+
+Final `validate` reopens a linked profile after verifying its file binding,
+validates its content and passing status, and compares its asset/page identity,
+metrics, performance profile, and resource samples with the sealed browser
+report. A report-only edit cannot retain a passing linked-evidence verdict by
+leaving the observation file and its hash unchanged. Inline-only V0.1 receipts
+remain supported under their existing validation rules.
 
 For `status: BLOCKED`, set `page_status: ready` and a nonempty `blocker`.
 Screenshots may be omitted when capture itself is the blocker; do not invent a

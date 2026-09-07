@@ -1,5 +1,48 @@
 export type ViewerStatus = 'loading' | 'ready' | 'context-lost' | 'restoring' | 'error'
 export type ContextStatus = 'healthy' | 'lost' | 'restoring'
+export type PerformanceProfileStatus = 'idle' | 'warming' | 'sampling' | 'complete' | 'invalid'
+
+export interface SceneFacts {
+  objects: number
+  meshes: number
+  materials: number
+  dimensions: [number, number, number]
+  nodeNames: string[]
+  materialNames: string[]
+}
+
+export interface RendererMetrics {
+  calls: number
+  triangles: number
+  geometries: number
+  textures: number
+}
+
+export interface ResourceSample {
+  mounts: number
+  disposes: number
+  geometries: number
+  textures: number
+  captured_at_ms: number
+}
+
+export interface PerformanceProfileSnapshot {
+  status: PerformanceProfileStatus
+  source: 'viewer-observability'
+  warmup_ms: number
+  sample_ms: number
+  started_at_ms: number | null
+  sample_started_at_ms: number | null
+  completed_at_ms: number | null
+  sample_count: number
+  viewport: readonly [number, number]
+  device_pixel_ratio: number
+  visibility_state: DocumentVisibilityState
+  frame_p50_ms: number | null
+  frame_p95_ms: number | null
+  renderer_peak: Readonly<RendererMetrics>
+  invalid_reason: string | null
+}
 
 export interface ThreeDCraftSnapshot {
   readonly schema: '3d-craft.web-observability.v1'
@@ -29,6 +72,7 @@ export interface ThreeDCraftSnapshot {
     frame_p50_ms: number | null
     frame_p95_ms: number | null
   }>
+  readonly performance_profile: Readonly<PerformanceProfileSnapshot>
   readonly lifecycle: Readonly<{
     mounts: number
     remounts: number
@@ -41,6 +85,7 @@ export interface ThreeDCraftSnapshot {
       last_lost_at_ms: number | null
       last_restored_at_ms: number | null
     }>
+    resource_samples: readonly Readonly<ResourceSample>[]
   }>
   readonly error: Readonly<{ message: string }> | null
 }
@@ -63,6 +108,7 @@ const lifecycle = {
     last_lost_at_ms: null as number | null,
     last_restored_at_ms: null as number | null,
   },
+  resource_samples: [] as ResourceSample[],
 }
 let current: ThreeDCraftSnapshot | undefined
 
@@ -72,6 +118,9 @@ function frozenLifecycle(): ThreeDCraftSnapshot['lifecycle'] {
     remounts: lifecycle.remounts,
     disposes: lifecycle.disposes,
     context: Object.freeze({ ...lifecycle.context }),
+    resource_samples: Object.freeze(
+      lifecycle.resource_samples.map((sample) => Object.freeze({ ...sample })),
+    ),
   })
 }
 
@@ -94,10 +143,35 @@ function republishLifecycle(status?: ViewerStatus): void {
 export function noteMount(): void {
   lifecycle.mounts += 1
   if (lifecycle.mounts > 1) lifecycle.remounts += 1
+  republishLifecycle()
 }
 
 export function noteDispose(): void {
   lifecycle.disposes += 1
+  republishLifecycle()
+}
+
+export function resetResourceSamples(): void {
+  lifecycle.resource_samples = []
+  republishLifecycle()
+}
+
+export function noteResourceSample(
+  renderer: Pick<RendererMetrics, 'geometries' | 'textures'>,
+  now = performance.now(),
+): void {
+  if (lifecycle.mounts < 1) return
+  const previous = lifecycle.resource_samples.at(-1)
+  if (previous?.mounts === lifecycle.mounts) return
+  lifecycle.resource_samples.push({
+    mounts: lifecycle.mounts,
+    disposes: lifecycle.disposes,
+    geometries: renderer.geometries,
+    textures: renderer.textures,
+    captured_at_ms: now,
+  })
+  if (lifecycle.resource_samples.length > 8) lifecycle.resource_samples.shift()
+  republishLifecycle()
 }
 
 export function noteContextTestSupport(supported: boolean): void {

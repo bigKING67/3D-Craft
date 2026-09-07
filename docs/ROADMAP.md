@@ -11,10 +11,17 @@ and a single original coffee-grinder fixture.
 Vanilla Three.js, richer interaction, animation lifecycle, context-loss
 recovery, performance profiling, and optional Three.js/Chrome tool adapters.
 
-The first in-progress slice adds real `WEBGL_lose_context` recovery to the R3F
-viewer, visible `context-lost` and `restoring` states, resource-lifecycle
-observability, and an optional strict `context_loss` browser-evidence extension.
-It does not yet complete the remaining V0.2 scope above.
+The first slice adds real `WEBGL_lose_context` recovery to the R3F viewer,
+visible `context-lost` and `restoring` states, resource-lifecycle observability,
+and an optional strict `context_loss` browser-evidence extension. The second
+slice adds a bounded 3-second warmup plus 10-second sample, measured frame
+p50/p95 and renderer peaks, and at least three sequential same-renderer GLB
+reloads for geometry/texture stability. The third working-tree slice adds a
+tool-neutral Viewer control that performs the whole sequence and a linked,
+schema-valid profile observation that the existing browser evidence binder can
+seal without hand-transcribing metrics. These slices do not yet complete
+Vanilla Three.js, richer interaction, animation lifecycle, optional tool
+adapters, or physical target-device profiling.
 
 ## V0.3 — reference reconstruction
 

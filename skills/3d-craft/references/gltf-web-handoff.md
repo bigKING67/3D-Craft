@@ -33,8 +33,13 @@ loading, error, camera framing, resize, tone mapping, color space, shadows,
 interaction, and resource disposal. Record context-loss recovery as
 `UNVERIFIED` in a V0.1-only receipt. The bundled viewer now contains the first
 V0.2 recovery slice and can bind an optional, strict `context_loss` observation;
-this does not make the rest of the V0.2 roadmap complete. Revalidate after
-every optimization and compare visual evidence before accepting size gains.
+its second slice adds an explicit warmup/sample profile and same-renderer GLB
+reload observations for resource-stability evidence. The next slice exposes a
+development/test-only, tool-neutral control that returns one schema-valid
+profile observation for run-owned binding, so Agents do not hand-transcribe
+performance fields. These slices do not make the rest of the V0.2 roadmap
+complete. Revalidate after every optimization and compare visual evidence
+before accepting size gains.
 
 Keep viewer npm dependencies and generated assets out of the installed Skill;
 the audited validator runtime above is the only V0.1 exception. Copy the viewer

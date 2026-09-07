@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ViewerStatus } from './observability'
+import type { SceneFacts, ViewerStatus } from './observability'
+import { ProfileOrchestrator } from './ProfileOrchestrator'
 import './styles.css'
 
 type AssetSceneComponent = typeof import('./AssetScene')['AssetScene']
-
-interface SceneFacts {
-  objects: number
-  meshes: number
-  materials: number
-  dimensions: [number, number, number]
-  nodeNames: string[]
-  materialNames: string[]
-}
 
 const assetUrl = import.meta.env.VITE_ASSET_URL || '/asset.glb'
 const assetSha256 = import.meta.env.VITE_ASSET_SHA256 || 'unverified'
@@ -28,7 +20,6 @@ export default function App() {
   const [error, setError] = useState('')
   const [facts, setFacts] = useState<SceneFacts>({ objects: 0, meshes: 0, materials: 0, dimensions: [0, 0, 0], nodeNames: [], materialNames: [] })
   const [reducedMotion, setReducedMotion] = useState(false)
-  const [sceneKey, setSceneKey] = useState(0)
   const [SceneRenderer, setSceneRenderer] = useState<AssetSceneComponent | null>(null)
 
   const handleStatus = useCallback((next: ViewerStatus, detail = '') => {
@@ -43,13 +34,6 @@ export default function App() {
     update()
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
-  }, [])
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return
-    const remount = () => setSceneKey((value) => value + 1)
-    window.addEventListener('3d-craft:test-remount', remount)
-    return () => window.removeEventListener('3d-craft:test-remount', remount)
   }, [])
 
   useEffect(() => {
@@ -72,6 +56,7 @@ export default function App() {
 
   return (
     <main className="viewer-shell">
+      <ProfileOrchestrator />
       <aside className="evidence-rail" aria-label="Asset evidence summary">
         <div>
           <p className="eyebrow">3D-Craft / V0.1</p>
@@ -117,7 +102,6 @@ export default function App() {
         <div className="canvas-wrap">
           {SceneRenderer && (
             <SceneRenderer
-              key={sceneKey}
               assetUrl={assetUrl}
               assetSha256={assetSha256}
               reducedMotion={reducedMotion}
