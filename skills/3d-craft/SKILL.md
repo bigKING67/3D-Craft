@@ -1,12 +1,6 @@
 ---
 name: 3d-craft
-description: >
-  Plan, create, inspect, refine, export, integrate, validate, and repair
-  Blender, glTF/GLB, Three.js, WebGL, and React Three Fiber product or prop
-  assets. Use for reproducible Blender production, Blender-to-web handoff,
-  fixed-view render evidence, GLB validation, web 3D runtime QA, or a failing
-  3D asset/viewer. V0.1 does not cover reference-image reconstruction,
-  characters, simulation, games, or WebGPU.
+description: "创建/修复/导出/验证 Blender 产品道具、GLB 与 Three.js/R3F 查看器。V0.1 不支持参考图重建、角色、模拟、游戏或 WebGPU。"
 license: MIT
 metadata:
   author: bigKING67
